@@ -204,7 +204,8 @@ function SettingsPage() {
             <option value="compatible">Gộp tương thích (chuyển sang H.264, chậm hơn)</option>
           </select>
           <p className="settings-hint">
-            Khi đã tải đủ <b>toàn bộ</b> tập của một phim, app tự ghép thành một tệp <code>Tên phim_Bản gộp.mp4</code> trong cùng thư mục. Các tập lẻ vẫn được giữ lại.
+            Khi một phim tải xong (không còn tập đang chờ), app tự ghép các tập đã có thành một tệp nếu chúng <b>liên tiếp nhau</b> (không bị hổng tập).
+            Đủ cả phim: <code>Tên phim_Bản gộp.mp4</code>; chưa đủ: <code>Tên phim_Bản gộp Tập 1-12.mp4</code>. Các tập lẻ vẫn được giữ lại.
           </p>
         </div>
 

@@ -406,26 +406,46 @@ async function runTask(task) {
 // 正在发起自动合并的 series_id（同一时刻多集同时完成时避免重复合并）
 const autoMerging = new Set();
 
-/** 某剧的任务全部完成（无等待/下载中/失败/停止）时，按设置自动合并 */
+/**
+ * 某剧的任务都已结束（无等待/下载中）时，按设置自动合并已下载的分集。
+ * 只在已下载分集连续（无断档）时合并；不是整部剧时文件名带上集数范围。
+ */
 async function maybeAutoMerge(task) {
-  if (task.status !== 'completed' || !task.hongguoInfo) return;
+  if ((task.status !== 'completed' && task.status !== 'failed') || !task.hongguoInfo) return;
   const settings = getCurrentSettings();
   if (!settings.auto_merge) return;
   const sid = String(task.hongguoInfo.series_id);
   if (autoMerging.has(sid)) return;
   const siblings = downloadTasks.filter((t) => t.hongguoInfo && String(t.hongguoInfo.series_id) === sid);
-  if (!siblings.every((t) => t.status === 'completed')) return;
-  // 只合并整部剧：避免播放页零散补下几集时就提前产出不完整的合集
-  const entry = seriesRegistry.find((s) => String(s.series_id) === sid);
-  if (entry && Array.isArray(entry.episodes) && siblings.length < entry.episodes.length) return;
+  if (siblings.some((t) => t.status === 'pending' || t.status === 'downloading')) return;
   if (mergeTasks.some((m) => m.seriesId === sid && m.status === 'running')) return;
+
+  const entry = seriesRegistry.find((s) => String(s.series_id) === sid);
+  const title = (entry && entry.series_title) || task.hongguoInfo.series_title || '';
+  const { ordered } = collectSeriesEpisodeFiles(sid, title);
+  const range = autoMergeRange(ordered.map((e) => e.vid_index), entry ? entry.episodes.length : 0);
+  if (!range.ok) {
+    console.log('[AutoMerge] Bỏ qua:', range.reason);
+    return;
+  }
+
   autoMerging.add(sid);
   try {
-    const res = await startMerge(sid, '', { compatible: !!settings.auto_merge_compatible });
+    const name = range.full ? '' : `${sanitizeFolderName(title)}_${MERGED_SUFFIX} Tập ${range.from}-${range.to}`;
+    const res = await startMerge(sid, name, { compatible: !!settings.auto_merge_compatible });
     if (!res.success) console.warn('[AutoMerge] Bỏ qua:', res.error);
   } finally {
     autoMerging.delete(sid);
   }
+}
+
+/** 已下载集号（升序）是否构成连续区间；full=覆盖整部剧（1..total） */
+function autoMergeRange(indexes, total) {
+  if (indexes.length < 2) return { ok: false, reason: 'chưa đủ 2 tập' };
+  const from = indexes[0];
+  const to = indexes[indexes.length - 1];
+  if (to - from + 1 !== indexes.length) return { ok: false, reason: `các tập không liên tiếp (${indexes.join(',')})` };
+  return { ok: true, from, to, full: from === 1 && total > 0 && to === total };
 }
 
 // 保留旧名，内部逻辑保持不变（多处调用点仍在用）
