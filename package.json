@@ -9,6 +9,7 @@
     "dev": "node scripts/dev.js",
     "dev:react": "vite",
     "build:react": "vite build",
+    "setup:ytdlp": "node scripts/setup-ytdlp.js",
     "build": "npm run build:react && electron-builder --win",
     "build:zip": "npm run build:react && electron-builder --win --dir && node scripts/make-zip.js",
     "build:dir": "npm run build:react && electron-builder --win --dir",
@@ -55,6 +56,13 @@
           "*.txt",
           "COPYING.*",
           "LICENSE.md"
+        ]
+      },
+      {
+        "from": "build/yt-dlp",
+        "to": "bin",
+        "filter": [
+          "yt-dlp.exe"
         ]
       }
     ],

@@ -16,8 +16,19 @@ const axios = require('axios');
 
 const hongguo = require('./src/native/hongguo');
 const reelfren = require('./src/native/reelfren');
-// Chọn nguồn dữ liệu theo ID: ID của reelfren có tiền tố rf-, còn lại đều là Hongguo
-const sourceFor = (id) => (reelfren.owns(id) ? reelfren : hongguo);
+const ytdlp = require('./src/native/ytdlp');
+// Chọn nguồn dữ liệu theo ID: reelfren có tiền tố rf-, Bilibili/Ixigua (qua yt-dlp) có tiền tố yt-, còn lại đều là Hongguo
+const sourceFor = (id) => (reelfren.owns(id) ? reelfren : ytdlp.owns(id) ? ytdlp : hongguo);
+
+/** Tải một tập Bilibili/Ixigua bằng yt-dlp ra tệp tạm rồi mới đổi tên, để tệp dở dang không bị coi là đã tải xong */
+async function downloadViaYtdlp(vid, finalPath, { onProgress, onSpawn } = {}) {
+  const ffmpeg = resolveFfmpeg('ffmpeg');
+  ytdlp.options.ffmpeg = ffmpeg && ffmpeg !== 'ffmpeg' ? ffmpeg : null; // 'ffmpeg' nghĩa là để yt-dlp tự tìm trong PATH
+  ytdlp.options.cookiesBrowser = String(getCurrentSettings().ytdlp_cookies_browser || '').trim();
+  const tmpPath = finalPath.replace(/\.mp4$/i, '') + '.ytdl.mp4';
+  await ytdlp.downloadTo(vid, tmpPath, { onProgress, onSpawn });
+  fs.renameSync(tmpPath, finalPath);
+}
 const store = require('./src/store');
 const APP_VERSION = app.getVersion() || '1.0.0';
 
@@ -136,6 +147,8 @@ function getDefaultSettings() {
     // Tự gộp thành một tệp sau khi mọi tác vụ của một phim tải xong; compatible=chuyển mã sang H.264
     auto_merge: false,
     auto_merge_compatible: false,
+    // Trình duyệt để yt-dlp đọc cookie (Ixigua bắt buộc có cookie): ''=không dùng, firefox/edge/chrome...
+    ytdlp_cookies_browser: '',
     // ===== Proxy mạng =====
     // proxy_enabled: có bật proxy không (khi tắt thì bỏ qua proxy hệ thống, kết nối trực tiếp)
     // proxy_mode:    system=theo hệ thống/biến môi trường · custom=chỉ định thủ công · direct=bắt buộc kết nối trực tiếp
@@ -565,8 +578,10 @@ async function executeHongguoDownload(task) {
     sendToRenderer('download-progress', { id, progress: 0, receivedBytes: 0, totalBytes: 0 });
 
     // 1. Lấy link phát trực tiếp và thông tin mã hóa spade_a (khi dự phòng qua trang chính thức thì spadeA rỗng, link là MP4 không mã hóa)
-    const playInfo = await sourceFor(vid).fetchPlayUrlSingle(vid, hongguoInfo && hongguoInfo.series_id);
-    if (!playInfo || !playInfo.url) {
+    //    Nguồn yt-dlp không có link trực tiếp: yt-dlp tự tải và gộp ở bước 3
+    const viaYtdlp = ytdlp.owns(vid);
+    const playInfo = viaYtdlp ? null : await sourceFor(vid).fetchPlayUrlSingle(vid, hongguoInfo && hongguoInfo.series_id);
+    if (!viaYtdlp && (!playInfo || !playInfo.url)) {
       throw new Error('Không lấy được địa chỉ phát hợp lệ' + (playInfo && playInfo.error ? ' (' + playInfo.error + ')' : ''));
     }
 
@@ -587,6 +602,36 @@ async function executeHongguoDownload(task) {
       task.progress = 100;
       task.endTime = Date.now();
       saveDownloadTasks();
+      sendToRenderer('download-completed', { id, path: finalPath });
+      return;
+    }
+
+    if (viaYtdlp) {
+      try {
+        await downloadViaYtdlp(vid, finalPath, {
+          onSpawn: (child) => { task.cancelSource = { cancel: () => child.kill() }; },
+          onProgress: (received, total) => {
+            task.receivedBytes = received;
+            task.totalBytes = total;
+            task.progress = total ? Math.min(99, Math.floor((received / total) * 100)) : 0;
+            sendToRenderer('download-progress', { id, progress: task.progress, receivedBytes: received, totalBytes: total });
+          },
+        });
+      } catch (e) {
+        if (!task.cancelled) throw e;
+      }
+      delete task.cancelSource;
+      task.endTime = Date.now();
+      if (task.cancelled) {
+        task.status = 'stopped';
+        saveDownloadTasks();
+        sendToRenderer('download-stopped', { id });
+        return;
+      }
+      task.status = 'completed';
+      task.progress = 100;
+      saveDownloadTasks();
+      console.log('[yt-dlp] Tải xuống hoàn tất:', finalPath);
       sendToRenderer('download-completed', { id, path: finalPath });
       return;
     }
@@ -691,7 +736,7 @@ function sendToRenderer(channel, payload) {
 // ===== IPC: phân tích Hongguo và tải hàng loạt =====
 ipcMain.handle('hongguo-resolve', async (event, input) => {
   try {
-    const seriesId = reelfren.seriesIdFromUrl(input) || await hongguo.resolveSeriesId(input);
+    const seriesId = reelfren.seriesIdFromUrl(input) || await ytdlp.seriesIdFromUrl(input) || await hongguo.resolveSeriesId(input);
     const data = await sourceFor(seriesId).fetchEpisodeList(seriesId);
     upsertSeriesRegistry(data);
     return { success: true, data };
@@ -1827,6 +1872,15 @@ function registerLocalProtocol() {
 
 /** Tải cả tập vào bộ nhớ rồi giải mã (khi dự phòng qua trang chính thức thì link là MP4 không mã hóa, bỏ qua giải mã) */
 async function fetchDecryptedEpisode(vid, onProgress, seriesId) {
+  if (ytdlp.owns(vid)) {
+    const tmp = path.join(app.getPath('temp'), `online_${sanitizeFolderName(vid)}_${Date.now()}.mp4`);
+    try {
+      await downloadViaYtdlp(vid, tmp, { onProgress });
+      return fs.readFileSync(tmp);
+    } finally {
+      try { fs.unlinkSync(tmp); } catch (_) {}
+    }
+  }
   const playInfo = await sourceFor(vid).fetchPlayUrlSingle(vid, seriesId);
   if (!playInfo || !playInfo.url) throw new Error('Không lấy được địa chỉ phát hợp lệ' + (playInfo && playInfo.error ? ' (' + playInfo.error + ')' : ''));
 

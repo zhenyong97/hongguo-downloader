@@ -22,7 +22,7 @@ Công cụ desktop Windows dành cho **phim ngắn Hongguo (Hồng Quả — kê
 **engine giải mã luồng CENC-AES-CTR thuần (native)**: có thể duyệt/tìm kiếm phim, tải hàng loạt theo tập đã chọn và tự động giải mã thành
 MP4 không watermark; kết hợp trình phát tích hợp, xem trực tuyến và gộp một chạm, tạo thành vòng khép kín «khám phá → tải → xem → dọn dẹp».
 
-Ngoài Hongguo, ứng dụng còn có nguồn thứ hai là **PineDrama** (qua API reelfren).
+Ngoài Hongguo, ứng dụng còn có nguồn **PineDrama** (qua API reelfren) và **Bilibili / Ixigua** (dán link, tải qua [yt-dlp](https://github.com/yt-dlp/yt-dlp)).
 
 > **Nguồn gốc và tuyên bố sửa đổi**: Kho mã này là **phiên bản đã sửa đổi** của
 > [327044572/hongguo-downloader](https://github.com/327044572/hongguo-downloader) (sửa đổi từ tháng 9/2026),
@@ -104,6 +104,7 @@ lưu xong là có hiệu lực ngay, không cần khởi động lại.
 - Việc dò chỉ dựa vào `series_id` trong link, không phụ thuộc tên class giao diện của trang, nên khó bị hỏng khi trang đổi giao diện
 - Khi thất bại có thể bật «Hiện cửa sổ trình duyệt» để xử lý thủ công
 - Nguồn thứ hai **PineDrama** được lấy qua API reelfren (`src/native/reelfren.js`)
+- **Bilibili / Ixigua**: dán link `bilibili.com/video/BV…` hoặc `ixigua.com/<id>` vào ô phân tích; video nhiều phần (P1, P2…) mỗi phần là một tập. Ixigua cần chọn trình duyệt lấy cookie trong Cài đặt (`src/native/ytdlp.js`)
 
 ### 2. 🎯 Chọn tập và tải xuống
 
@@ -217,6 +218,7 @@ npm run dev        # khởi động đồng thời frontend Vite và client Elec
 ```powershell
 # 1) Chuẩn bị ffmpeg tích hợp (khoảng 88MB, không đưa vào repo, chỉ cần chạy một lần)
 node scripts/setup-ffmpeg.js
+node scripts/setup-ytdlp.js   # yt-dlp cho Bilibili/Ixigua; thêm --force để cập nhật khi trang đổi cấu trúc
 
 # 2) Môi trường không có quyền quản trị cần chạy một lần (xem mục «giải nén winCodeSign thất bại» bên dưới)
 node scripts/setup-winCodeSign.js
@@ -234,6 +236,7 @@ Có thể build bản Windows ngay trên macOS; trên Apple Silicon **bắt bu�
 
 ```bash
 node scripts/setup-ffmpeg.js
+node scripts/setup-ytdlp.js
 npm run build:react
 npx electron-builder --win --dir --x64     # thư mục dist/win-unpacked
 npx electron-builder --win nsis --x64      # bộ cài NSIS
@@ -341,7 +344,8 @@ Chỉ cần file còn, bản ghi có thể dựng lại được.
 │   ├── native/
 │   │   ├── hongguo.js            # Giao thức lõi: phân tích API, dẫn xuất khoá spade_a,
 │   │   │                         #   giải mã CENC-AES-CTR (bản file + bản bộ nhớ)
-│   │   └── reelfren.js           # Nguồn PineDrama qua API reelfren
+│   │   ├── reelfren.js           # Nguồn PineDrama qua API reelfren
+│   │   └── ytdlp.js              # Nguồn Bilibili / Ixigua qua yt-dlp
 │   └── components/
 │       ├── Browse.jsx            # Trang duyệt: phân loại / thể loại / phân trang / ngăn kéo chi tiết
 │       ├── SearchPanel.jsx       # Trang tìm kiếm (dò bằng trình duyệt nhúng)
@@ -353,6 +357,7 @@ Chỉ cần file còn, bản ghi có thể dựng lại được.
 ├── scripts/
 │   ├── dev.js                    # Trình khởi chạy chế độ phát triển (Vite + Electron)
 │   ├── setup-ffmpeg.js           # Tải ffmpeg tích hợp (không đưa vào repo; chạy được trên Windows/macOS/Linux)
+│   ├── setup-ytdlp.js            # Tải yt-dlp vào build/yt-dlp (không đưa vào repo)
 │   ├── setup-winCodeSign.js      # Giải nén sẵn winCodeSign, né giới hạn symbolic link
 │   ├── make-zip.js               # Đóng bản zip không cần cài đặt (kèm thư mục cấp cao nhất)
 │   ├── prepare-release-assets.js # Tạo asset tên ASCII cho GitHub Release

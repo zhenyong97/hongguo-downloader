@@ -12,6 +12,9 @@ build/ffmpeg/*
 !build/ffmpeg/COPYING.*
 !build/ffmpeg/LICENSE.md
 
+# yt-dlp tải bằng: node scripts/setup-ytdlp.js
+build/yt-dlp/
+
 # Đầu ra build và đóng gói
 release/
 out/

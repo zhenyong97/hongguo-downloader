@@ -208,7 +208,7 @@ function HongguoDownload({ onNavigate }) {
             <input
               type="text"
               className="input-field"
-              placeholder="Ví dụ: https://novelquickapp.com/s/WGPClz6sw10/ hoặc 7664958856774044697"
+              placeholder="Link Hongguo, PineDrama, Bilibili (bilibili.com/video/BV…) hoặc Ixigua, hay ID phim Hongguo"
               value={inputUrl}
               onChange={(e) => setInputUrl(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleResolve()}

@@ -47,6 +47,17 @@ Toàn văn giấy phép phân phối kèm phần mềm nằm trong `resources/bi
 
 FFmpeg là chương trình bên thứ ba độc lập; phần mềm này chỉ gọi giao diện công khai của nó qua dòng lệnh, không sửa đổi mã nguồn của nó.
 
+### yt-dlp (Unlicense)
+
+| Mục | Mô tả |
+|---|---|
+| File | `resources/bin/yt-dlp.exe` |
+| Phiên bản | Bản phát hành mới nhất lúc đóng gói (`node scripts/setup-ytdlp.js`) |
+| Nguồn | https://github.com/yt-dlp/yt-dlp/releases |
+| **Giấy phép** | **The Unlicense** (thuộc phạm vi công cộng); bản exe đóng gói kèm các thư viện Python theo giấy phép riêng, xem trang phát hành |
+
+Mục đích: tải video Bilibili và Ixigua. Được gọi qua dòng lệnh như một chương trình độc lập, không sửa đổi mã nguồn.
+
 ---
 
 ## Phụ thuộc phát triển
