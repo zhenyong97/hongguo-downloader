@@ -56,7 +56,10 @@ const MERGED_SUFFIX = 'Bản gộp';
 // Nhận diện tệp đã gộp: tương thích hậu tố tiếng Trung của bản cũ và "Bản gộp" của bản mới (tên tệp trên macOS có thể là NFD, nên chuẩn hóa trước). Giữ nguyên chuỗi tiếng Trung bên dưới để nhận ra tệp gộp từ bản cũ
 const isMergedName = (n) => { const s = String(n).normalize('NFC'); return s.includes('合集') || s.includes(MERGED_SUFFIX); };
 // Lấy số tập từ cuối tên tệp: tương thích "Tên phim 001.mp4", "X_Tập 001.mp4" và định dạng tiếng Trung của bản cũ ("X_Thứ 001 tập" viết bằng chữ Hán) — giữ nguyên chữ Hán "tập" trong regex
-const EP_FILE_RE = /(\d{1,4})(?:\s*集)?\.mp4$/i;
+// Bỏ qua luồng rời của yt-dlp đang tải dở ("… 001.ytdl.f30080.mp4"), nếu không sẽ bị nhận nhầm là tập 80
+const EP_FILE_RE = /(?<!\.f\d{0,6})(\d{1,4})(?:\s*集)?\.mp4$/i;
+
+const DOWNLOAD_TRIES = 4; // Số lần thử tải một tập trước khi báo thất bại
 
 let mainWindow = null;
 
@@ -638,50 +641,59 @@ async function executeHongguoDownload(task) {
 
     const tmpPath = finalPath + '.enc.tmp';
 
-    // 3. Tải dạng stream qua HTTP
-    const CancelToken = axios.CancelToken;
-    const source = CancelToken.source();
-    task.cancelSource = source;
-
+    // 3. Tải dạng stream qua HTTP. CDN bị giới hạn tốc độ (PineDrama/TikTok) hay treo hoặc rớt kết nối giữa chừng:
+    //    thử lại tối đa DOWNLOAD_TRIES lần, tải tiếp từ chỗ dừng bằng Range nếu máy chủ hỗ trợ
     let headers = { "User-Agent": hongguo.UA };
-    let response;
-    try {
-      response = await axios({
-        method: 'GET', url: playInfo.url, responseType: 'stream',
-        headers, timeout: 60000, cancelToken: source.token,
-      });
-    } catch (err) {
-      if (err.response && err.response.status === 403) {
-        headers["Referer"] = hongguo.VIDEO_REFERER;
-        response = await axios({
+    let received = 0;
+    for (let attempt = 1; ; attempt++) {
+      let writer = null;
+      try {
+        const source = axios.CancelToken.source();
+        task.cancelSource = source;
+        const get = () => axios({
           method: 'GET', url: playInfo.url, responseType: 'stream',
-          headers, timeout: 60000, cancelToken: source.token,
+          headers: received ? { ...headers, Range: `bytes=${received}-` } : headers,
+          timeout: 60000, cancelToken: source.token,
         });
-      } else {
-        throw err;
+        let response;
+        try {
+          response = await get();
+        } catch (err) {
+          if (!(err.response && err.response.status === 403) || headers.Referer) throw err;
+          headers = { ...headers, Referer: hongguo.VIDEO_REFERER };
+          response = await get();
+        }
+        if (response.status !== 206) received = 0; // Máy chủ bỏ qua Range: tải lại từ đầu
+        const totalLength = received + (parseInt(response.headers['content-length'], 10) || 0);
+        task.totalBytes = totalLength;
+
+        writer = fs.createWriteStream(tmpPath, { flags: received ? 'a' : 'w' });
+        task.writer = writer;
+        response.data.on('data', (chunk) => {
+          received += chunk.length;
+          task.receivedBytes = received;
+          const progress = totalLength ? Math.floor((received / totalLength) * 100) : 0;
+          task.progress = progress;
+          sendToRenderer('download-progress', { id, progress, receivedBytes: received, totalBytes: totalLength });
+        });
+        response.data.pipe(writer);
+        await new Promise((resolve, reject) => {
+          writer.on('finish', resolve);
+          writer.on('error', reject);
+          response.data.on('error', reject); // Rớt kết nối/hết thời gian chờ giữa chừng: trước đây không bắt nên tác vụ treo mãi
+        });
+        if (!task.cancelled && totalLength && received < totalLength) throw new Error(`Kết nối bị ngắt khi mới nhận ${received}/${totalLength} byte`);
+        break;
+      } catch (err) {
+        if (writer) await new Promise((r) => writer.end(r));
+        if (task.cancelled) break;
+        const status = err.response && err.response.status;
+        if (attempt >= DOWNLOAD_TRIES || (status >= 400 && status < 500)) throw err;
+        received = fs.existsSync(tmpPath) ? fs.statSync(tmpPath).size : 0; // Lấy theo tệp thật, phòng phần đệm chưa kịp ghi
+        console.warn(`[Hongguo] Lần ${attempt} lỗi (${err.message}), thử lại từ byte ${received}`);
+        await new Promise((r) => setTimeout(r, 2000 * attempt));
       }
     }
-
-    const totalLength = parseInt(response.headers['content-length'], 10) || 0;
-    task.totalBytes = totalLength;
-
-    const writer = fs.createWriteStream(tmpPath);
-    task.writer = writer;
-
-    let received = 0;
-    response.data.on('data', (chunk) => {
-      received += chunk.length;
-      task.receivedBytes = received;
-      const progress = totalLength ? Math.floor((received / totalLength) * 100) : 0;
-      task.progress = progress;
-      sendToRenderer('download-progress', { id, progress, receivedBytes: received, totalBytes: totalLength });
-    });
-
-    response.data.pipe(writer);
-    await new Promise((resolve, reject) => {
-      writer.on('finish', resolve);
-      writer.on('error', reject);
-    });
 
     delete task.cancelSource;
     delete task.writer;
