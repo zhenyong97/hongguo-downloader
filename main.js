@@ -15,6 +15,9 @@ const fsp = require('fs/promises');
 const axios = require('axios');
 
 const hongguo = require('./src/native/hongguo');
+const reelfren = require('./src/native/reelfren');
+// 按 ID 选数据源：reelfren 的 ID 带 rf- 前缀，其余都是红果
+const sourceFor = (id) => (reelfren.owns(id) ? reelfren : hongguo);
 const store = require('./src/store');
 const APP_VERSION = app.getVersion() || '1.0.0';
 
@@ -544,7 +547,7 @@ async function executeHongguoDownload(task) {
     sendToRenderer('download-progress', { id, progress: 0, receivedBytes: 0, totalBytes: 0 });
 
     // 1. 获取播放直链与 spade_a 加密信息（官网兜底时 spadeA 为空，直链为明文 MP4）
-    const playInfo = await hongguo.fetchPlayUrlSingle(vid, hongguoInfo && hongguoInfo.series_id);
+    const playInfo = await sourceFor(vid).fetchPlayUrlSingle(vid, hongguoInfo && hongguoInfo.series_id);
     if (!playInfo || !playInfo.url) {
       throw new Error('Không lấy được địa chỉ phát hợp lệ' + (playInfo && playInfo.error ? ' (' + playInfo.error + ')' : ''));
     }
@@ -670,8 +673,8 @@ function sendToRenderer(channel, payload) {
 // ===== IPC：红果解析与批量下载 =====
 ipcMain.handle('hongguo-resolve', async (event, input) => {
   try {
-    const seriesId = await hongguo.resolveSeriesId(input);
-    const data = await hongguo.fetchEpisodeList(seriesId);
+    const seriesId = reelfren.seriesIdFromUrl(input) || await hongguo.resolveSeriesId(input);
+    const data = await sourceFor(seriesId).fetchEpisodeList(seriesId);
     upsertSeriesRegistry(data);
     return { success: true, data };
   } catch (error) {
@@ -890,6 +893,7 @@ const BROWSE_CATEGORIES = [
   { slug: 'comic-drama', label: 'Phim hoạt hình' },
   { slug: 'ai-drama', label: 'Phim AI' },
   { slug: 'comic', label: 'Truyện tranh' },
+  { slug: 'pinedrama', label: 'PineDrama' }, // 走 reelfren API，不经内嵌浏览器
 ];
 
 ipcMain.handle('browse-categories', async () => BROWSE_CATEGORIES);
@@ -900,6 +904,11 @@ ipcMain.handle('browse-list', async (event, options) => {
     const cat = String(category).replace(/[^a-z0-9-]/gi, '') || 'real-drama';
     const gen = String(genre).replace(/[^a-z0-9-]/gi, '');
     const pg = Math.max(1, parseInt(page, 10) || 1);
+
+    if (cat === 'pinedrama') {
+      const results = await reelfren.listHome();
+      return { success: true, results, page: 1, totalPages: 1, total: results.length, genres: [], pageTitle: '' };
+    }
 
     let url = `${SEARCH_SITE}/category/${cat}`;
     if (gen) url += `/${gen}`;
@@ -926,7 +935,13 @@ ipcMain.handle('search-series', async (event, keyword) => {
   const kw = String(keyword || '').trim();
   if (!kw) return { success: false, error: 'Vui lòng nhập từ khóa tìm kiếm' };
   try {
-    return await runSearchSniff(kw);
+    // 红果与 PineDrama 并行搜索，任一边失败不影响另一边
+    const [hg, pd] = await Promise.allSettled([runSearchSniff(kw), reelfren.search(kw)]);
+    const hgRes = hg.status === 'fulfilled' ? hg.value : { success: false, error: hg.reason && hg.reason.message };
+    const pdList = pd.status === 'fulfilled' ? pd.value : [];
+    if (pd.status === 'rejected') console.warn('[Search] PineDrama thất bại:', pd.reason && pd.reason.message);
+    if (!hgRes.success && !pdList.length) return hgRes;
+    return { ...hgRes, success: true, results: [...(hgRes.results || []), ...pdList] };
   } catch (error) {
     console.error('[Search] Thất bại:', error.message);
     return { success: false, error: error.message };
@@ -937,7 +952,7 @@ ipcMain.handle('search-series', async (event, keyword) => {
 ipcMain.handle('search-resolve', async (event, seriesId) => {
   try {
     if (!seriesId) return { success: false, error: 'Thiếu series_id' };
-    const data = await hongguo.fetchEpisodeList(String(seriesId));
+    const data = await sourceFor(seriesId).fetchEpisodeList(String(seriesId));
     upsertSeriesRegistry(data);
     return { success: true, data };
   } catch (error) {
@@ -1791,7 +1806,7 @@ function registerLocalProtocol() {
 
 /** 下载整集到内存并解密（官网兜底时直链为明文 MP4，跳过解密） */
 async function fetchDecryptedEpisode(vid, onProgress, seriesId) {
-  const playInfo = await hongguo.fetchPlayUrlSingle(vid, seriesId);
+  const playInfo = await sourceFor(vid).fetchPlayUrlSingle(vid, seriesId);
   if (!playInfo || !playInfo.url) throw new Error('Không lấy được địa chỉ phát hợp lệ' + (playInfo && playInfo.error ? ' (' + playInfo.error + ')' : ''));
 
   let headers = { 'User-Agent': hongguo.UA };
@@ -2267,7 +2282,7 @@ ipcMain.handle('download-series-list', async (event, seriesIds) => {
     while (next < ids.length) {
       const sid = ids[next++];
       try {
-        const data = await hongguo.fetchEpisodeList(sid);
+        const data = await sourceFor(sid).fetchEpisodeList(sid);
         upsertSeriesRegistry(data);
         episodeCount += enqueueEpisodes({
           seriesId: data.series_id,
