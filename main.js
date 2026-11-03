@@ -813,8 +813,49 @@ function getSearchWindow(key = 'hongguo') {
   searchWindow.on('closed', () => {
     delete sniffWindows[key];
   });
-  sniffWindows[key] = { win: searchWindow, ready: null };
+  sniffWindows[key] = { win: searchWindow, ready: null, searchApi: null };
+  if (key === 'hongguo') captureSearchApi(searchWindow, sniffWindows[key]);
   return searchWindow;
+}
+
+/**
+ * Đọc JSON của /api/search/result mà chính trang gọi (API có chữ ký a_bogus nên không gọi thẳng được).
+ * JSON có thêm series_intro, thể loại và totalPages — trang chỉ hiện tên phim.
+ */
+function captureSearchApi(win, slot) {
+  const dbg = win.webContents.debugger;
+  const pending = new Set();
+  try {
+    dbg.attach('1.3');
+    dbg.sendCommand('Network.enable').catch(() => {});
+  } catch (e) {
+    console.warn('[Search] Không gắn được debugger, chỉ đọc DOM:', e.message);
+    return;
+  }
+  dbg.on('message', async (_e, method, params) => {
+    if (method === 'Network.responseReceived' && /\/api\/search\/result\b/.test(params.response.url)) {
+      pending.add(params.requestId);
+    } else if (method === 'Network.loadingFinished' && pending.delete(params.requestId)) {
+      try {
+        const { body } = await dbg.sendCommand('Network.getResponseBody', { requestId: params.requestId });
+        slot.searchApi = JSON.parse(body);
+      } catch (_) {}
+    }
+  });
+}
+
+function cardFromSearchApi(item) {
+  const v = (item && item.video_data) || {};
+  if (!v.series_id) return null;
+  return {
+    series_id: String(v.series_id),
+    series_title: v.series_title || item.name || '',
+    cover: v.series_cover || '',
+    episode_count: Number(v.episode_cnt) || 0,
+    tags: (v.category_list || []).map((c) => c.name).filter(Boolean).slice(0, 4),
+    intro: v.series_intro || '',
+    note: [v.episode_right_text, v.hot_score_data && v.hot_score_data.text].filter(Boolean).join(' · '),
+  };
 }
 
 /**
@@ -961,6 +1002,8 @@ async function runSniffOnUrl(url, label, key = 'hongguo') {
   // Chạy tuần tự trong cùng một cửa sổ, tránh các lần điều hướng song song cắt ngang nhau
   const task = async () => {
     console.log(`[${label}] Mở:`, url);
+    const slot = sniffWindows[key];
+    slot.searchApi = null;
     try {
       await win.loadURL(url, { userAgent: SEARCH_UA });
     } catch (e) {
@@ -978,13 +1021,25 @@ async function runSniffOnUrl(url, label, key = 'hongguo') {
       } catch (e) {
         last = [];
       }
-      if (last.length > 0) break;
+      // API đã trả về (kể cả danh sách rỗng) thì khỏi chờ hết thời gian
+      if (last.length > 0 || slot.searchApi) break;
     }
 
     let meta = { page: 1, totalPages: 0, total: 0, genres: [] };
     try {
       meta = JSON.parse((await win.webContents.executeJavaScript(BROWSE_META_JS, true)) || '{}');
     } catch (_) {}
+
+    // Body của API đến sau thẻ trên trang một chút: chờ thêm tối đa 2 giây, có thì dùng thay cho DOM
+    for (let i = 0; i < 10 && last.length && !slot.searchApi && /\/search\//.test(url); i++) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    const api = slot.searchApi;
+    const wantPage = Number((url.match(/[?&]page=(\d+)/) || [])[1] || 1);
+    if (api && Array.isArray(api.searchList) && (api.pageNum || 1) === wantPage) {
+      last = api.searchList.map(cardFromSearchApi).filter(Boolean);
+      meta = { ...meta, page: api.pageNum || 1, totalPages: api.totalPages || 1, total: api.totalCount || last.length };
+    }
 
     if (!last.length) {
       // Dự phòng: trả kèm tiêu đề trang để người dùng biết là "không có kết quả" hay "bị chặn"
@@ -1081,6 +1136,58 @@ ipcMain.handle('search-series', async (event, keyword) => {
     console.error('[Search] Thất bại:', error.message);
     return { success: false, error: error.message };
   }
+});
+
+/**
+ * Tìm theo nội dung / mô-típ: mỗi từ khóa (tiếng Trung, cách nhau bằng dấu cách hoặc dấu phẩy) được tìm riêng,
+ * Hongguo lấy hết mọi trang (tìm kiếm của Hongguo khớp cả phần giới thiệu), reelfren và Bilibili lấy trang đầu.
+ * Phim khớp nhiều mô-típ hơn (xuất hiện trong kết quả hoặc chứa từ khóa trong tên/giới thiệu/thể loại) xếp lên trước.
+ */
+const THEME_MAX_PAGES = 50; // ponytail: chặn trên phòng site trả totalPages bất thường; tăng nếu từ khóa thật sự có hơn 500 phim
+let themeSearchRun = 0; // Tăng mỗi lần tìm mới hoặc bấm dừng, vòng lặp cũ thấy khác số thì tự thoát
+
+ipcMain.handle('search-theme-cancel', () => { themeSearchRun++; });
+
+ipcMain.handle('search-theme', async (event, input) => {
+  const keywords = [...new Set(String(input || '').split(/[\s,，、;；]+/).filter(Boolean))];
+  if (!keywords.length) return { success: false, error: 'Vui lòng nhập ít nhất một từ khóa' };
+  const run = ++themeSearchRun;
+  const hits = new Map(); // series_id -> { item, matched: Set<từ khóa> }
+  const add = (kw, list) => {
+    for (const r of list || []) {
+      if (!r.series_id || !r.series_title) continue;
+      const h = hits.get(r.series_id) || { item: r, matched: new Set() };
+      if (!h.item.intro && r.intro) h.item = r;
+      h.matched.add(kw);
+      hits.set(r.series_id, h);
+    }
+  };
+  const progress = (text) => event.sender.send('search-theme-progress', { text, count: hits.size });
+
+  for (const kw of keywords) {
+    if (run !== themeSearchRun) break;
+    const side = Promise.allSettled([reelfren.search(kw), runSniffOnUrl(BILI_SEARCH_URL(kw), 'BiliSearch', 'bili')]);
+    for (let page = 1, total = 1; page <= total && page <= THEME_MAX_PAGES && run === themeSearchRun; page++) {
+      progress(`«${kw}»: trang ${page}${total > 1 ? '/' + total : ''}`);
+      const res = await runSniffOnUrl(`${SEARCH_SITE}/search/${encodeURIComponent(kw)}?page=${page}`, 'ThemeSearch').catch(() => null);
+      if (!res || !res.results.length) break;
+      add(kw, res.results);
+      total = (res.meta && res.meta.totalPages) || 1;
+    }
+    const [pd, bl] = await side;
+    if (pd.status === 'fulfilled') add(kw, pd.value);
+    if (bl.status === 'fulfilled') add(kw, bl.value.results);
+  }
+
+  const results = [...hits.values()]
+    .map(({ item, matched }) => {
+      const text = [item.series_title, item.intro, ...(item.tags || [])].join(' ');
+      for (const kw of keywords) if (text.includes(kw)) matched.add(kw);
+      return { ...item, matched: keywords.filter((k) => matched.has(k)) };
+    })
+    .sort((a, b) => b.matched.length - a.matched.length); // sort ổn định: cùng số khớp thì giữ thứ tự site trả về
+  console.log(`[ThemeSearch] ${keywords.join(' ')} -> ${results.length} phim${run !== themeSearchRun ? ' (đã dừng)' : ''}`);
+  return { success: true, results, stopped: run !== themeSearchRun };
 });
 
 // Sau khi chọn một phim từ kết quả tìm kiếm, lấy đủ danh sách tập và đăng ký hồ sơ

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './HongguoDownload.css';
-import { Search, Film, RefreshCw, ExternalLink, Download } from './icons';
+import { Search, Film, RefreshCw, ExternalLink, Download, X } from './icons';
 
 /**
  * SearchPanel —— dùng trình duyệt nhúng bắt kết quả tìm kiếm của hongguoduanju.com và search.bilibili.com
@@ -14,6 +14,10 @@ function SearchPanel({ onSelectSeries, onSwitchToInput, onNavigate }) {
   const [pageTitle, setPageTitle] = useState('');
   const [pickingId, setPickingId] = useState('');
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [byTheme, setByTheme] = useState(false); // Tìm theo nội dung / mô-típ: nhiều từ khóa, lấy hết mọi trang
+  const [progress, setProgress] = useState(null);
+
+  useEffect(() => window.electronAPI.onSearchThemeProgress(setProgress), []);
 
   // Tải tất cả các tập của mọi kết quả tìm kiếm
   const downloadAll = async () => {
@@ -38,15 +42,16 @@ function SearchPanel({ onSelectSeries, onSwitchToInput, onNavigate }) {
   const doSearch = async () => {
     const kw = keyword.trim();
     if (!kw) {
-      setError('Vui lòng nhập từ khóa tên phim');
+      setError(byTheme ? 'Vui lòng nhập từ khóa mô-típ' : 'Vui lòng nhập từ khóa tên phim');
       return;
     }
     setLoading(true);
     setError('');
     setResults(null);
     setPageTitle('');
+    setProgress(null);
     try {
-      const res = await window.electronAPI.searchSeries(kw);
+      const res = byTheme ? await window.electronAPI.searchTheme(kw) : await window.electronAPI.searchSeries(kw);
       if (!res || !res.success) {
         setError((res && res.error) || 'Tìm kiếm thất bại, vui lòng thử lại');
         setResults([]);
@@ -96,7 +101,7 @@ function SearchPanel({ onSelectSeries, onSwitchToInput, onNavigate }) {
         <input
           type="text"
           className="input-field"
-          placeholder="Nhập tên phim bằng tiếng Trung"
+          placeholder={byTheme ? 'Từ khóa mô-típ tiếng Trung, cách nhau bằng dấu cách: 逆袭 总裁 打脸' : 'Nhập tên phim bằng tiếng Trung'}
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && doSearch()}
@@ -114,9 +119,21 @@ function SearchPanel({ onSelectSeries, onSwitchToInput, onNavigate }) {
             </>
           )}
         </button>
+        {loading && byTheme && (
+          <button className="btn btn-outline" onClick={() => window.electronAPI.searchThemeCancel()}>
+            <X size={16} />
+            <span>Dừng</span>
+          </button>
+        )}
       </div>
+      <label className="search-mode">
+        <input type="checkbox" checked={byTheme} disabled={loading} onChange={(e) => setByTheme(e.target.checked)} />
+        Tìm theo nội dung / mô-típ (mỗi từ khóa tìm riêng, lấy hết mọi trang)
+      </label>
       <p className="settings-hint" style={{ marginTop: 8 }}>
-        Từ khóa sẽ được tìm trên hongguoduanju.com, Bilibili (trình duyệt tích hợp) và PineDrama (qua reelfren); chọn một kết quả để lấy toàn bộ tập và tải xuống ngay.
+        {byTheme
+          ? 'Mỗi từ khóa được tìm riêng: Hongguo lấy hết mọi trang (khớp cả phần giới thiệu), PineDrama và Bilibili lấy trang đầu. Phim khớp nhiều mô-típ hơn xếp lên trước; có thể mất vài phút.'
+          : 'Từ khóa sẽ được tìm trên hongguoduanju.com, Bilibili (trình duyệt tích hợp) và PineDrama (qua reelfren); chọn một kết quả để lấy toàn bộ tập và tải xuống ngay.'}
       </p>
 
       {error && <div className="alert alert-error">{error}</div>}
@@ -124,7 +141,11 @@ function SearchPanel({ onSelectSeries, onSwitchToInput, onNavigate }) {
       {loading && (
         <div className="search-loading">
           <RefreshCw size={18} className="spin" />
-          <span>Đang lấy kết quả tìm kiếm, lần đầu có thể mất vài giây…</span>
+          <span>
+            {byTheme && progress
+              ? `Đang tìm ${progress.text} — đã có ${progress.count} phim…`
+              : 'Đang lấy kết quả tìm kiếm, lần đầu có thể mất vài giây…'}
+          </span>
         </div>
       )}
 
@@ -173,6 +194,13 @@ function SearchPanel({ onSelectSeries, onSwitchToInput, onNavigate }) {
                 </div>
                 <div className="search-card-body">
                   <div className="search-card-title">{item.series_title}</div>
+                  {item.matched && item.matched.length > 0 && (
+                    <div className="search-card-tags">Khớp: {item.matched.join(' · ')}</div>
+                  )}
+                  {item.intro && <div className="search-card-intro" title={item.intro}>{item.intro}</div>}
+                  {item.tags && item.tags.length > 0 && (
+                    <div className="search-card-sub">{item.tags.join(' · ')}</div>
+                  )}
                   <div className="search-card-sub">
                     {pickingId === item.series_id ? (
                       <>

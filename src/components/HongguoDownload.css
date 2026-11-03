@@ -391,7 +391,7 @@
 .search-card {
   display: flex;
   gap: 12px;
-  align-items: center;
+  align-items: flex-start;
   padding: 10px;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
@@ -453,6 +453,36 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.search-card-tags {
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-card-intro {
+  margin-top: 4px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.search-mode {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
 }
 
 .search-empty {

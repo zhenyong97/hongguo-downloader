@@ -13,6 +13,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Tìm kiếm (dò bắt qua trình duyệt nhúng)
   searchSeries: (keyword) => ipcRenderer.invoke('search-series', keyword),
+  searchTheme: (keywords) => ipcRenderer.invoke('search-theme', keywords),
+  searchThemeCancel: () => ipcRenderer.invoke('search-theme-cancel'),
+  onSearchThemeProgress: (cb) => {
+    const listener = (_e, data) => cb(data);
+    ipcRenderer.on('search-theme-progress', listener);
+    return () => ipcRenderer.removeListener('search-theme-progress', listener);
+  },
   searchResolve: (seriesId) => ipcRenderer.invoke('search-resolve', seriesId),
   searchWindowShow: (visible) => ipcRenderer.invoke('search-window-show', visible),
   getSeriesList: () => ipcRenderer.invoke('get-series-list'),
