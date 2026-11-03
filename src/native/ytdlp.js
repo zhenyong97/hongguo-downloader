@@ -54,12 +54,14 @@ async function seriesIdFromUrl(input) {
 }
 
 function resolveBin() {
-  const bin = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
+  // Bản dạng thư mục của yt-dlp (scripts/setup-ytdlp.js), tên tệp chạy khác nhau theo hệ điều hành
+  const bin = { win32: 'yt-dlp.exe', darwin: 'yt-dlp_macos', linux: 'yt-dlp_linux' }[process.platform] || 'yt-dlp';
+  const os = { win32: 'win', darwin: 'mac' }[process.platform] || process.platform;
   const candidates = [
-    // Sau khi đóng gói: resources/bin (cùng chỗ với ffmpeg)
-    process.resourcesPath ? path.join(process.resourcesPath, 'bin', bin) : null,
-    // Chế độ phát triển: build/yt-dlp trong repo (node scripts/setup-ytdlp.js)
-    path.join(__dirname, '..', '..', 'build', 'yt-dlp', bin),
+    // Sau khi đóng gói: resources/bin/yt-dlp (cạnh ffmpeg)
+    process.resourcesPath ? path.join(process.resourcesPath, 'bin', 'yt-dlp', bin) : null,
+    // Chế độ phát triển: build/yt-dlp/<os> trong repo
+    path.join(__dirname, '..', '..', 'build', 'yt-dlp', os, bin),
   ];
   return candidates.find((c) => c && fs.existsSync(c)) || 'yt-dlp'; // Cuối cùng để PATH tự phân giải
 }
@@ -141,6 +143,7 @@ async function downloadTo(vid, outPath, { onProgress, onSpawn } = {}) {
     '-f', 'bv*[vcodec^=avc1]+ba/bv*+ba/b', // Ưu tiên H.264 để máy không có bộ giải mã HEVC/AV1 vẫn phát được
     '--merge-output-format', 'mp4',
     '--force-overwrites', '--newline',
+    '--retry-sleep', 'http:exp=1:30', // CDN bóp tốc độ/ngắt kết nối khi tải nhiều: giãn dần giữa các lần thử thay vì thử dồn 10 lần rồi bỏ cuộc
     '--no-playlist', // Phần 1 của video nhiều phần dùng link không có ?p=, thiếu cờ này yt-dlp sẽ tải cả tuyển tập vào một tệp
     '--progress-template', 'download:PROG %(progress.downloaded_bytes)s %(progress.total_bytes,progress.total_bytes_estimate)s',
     '-o', outPath,

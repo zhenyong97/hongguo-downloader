@@ -59,11 +59,8 @@
         ]
       },
       {
-        "from": "build/yt-dlp",
-        "to": "bin",
-        "filter": [
-          "yt-dlp.exe"
-        ]
+        "from": "build/yt-dlp/${os}",
+        "to": "bin/yt-dlp"
       }
     ],
     "extraFiles": [
