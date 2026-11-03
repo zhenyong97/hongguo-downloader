@@ -104,6 +104,7 @@ lưu xong là có hiệu lực ngay, không cần khởi động lại.
 - Việc dò chỉ dựa vào `series_id` trong link, không phụ thuộc tên class giao diện của trang, nên khó bị hỏng khi trang đổi giao diện
 - Khi thất bại có thể bật «Hiện cửa sổ trình duyệt» để xử lý thủ công
 - Nguồn thứ hai **PineDrama** được lấy qua API reelfren (`src/native/reelfren.js`)
+- Tìm kiếm cũng trả về video **Bilibili** (dò search.bilibili.com bằng cửa sổ ẩn riêng, chạy song song với Hongguo); bị captcha thì bật «Hiện cửa sổ trình duyệt» để tự giải
 - **Bilibili / Douyin / Ixigua**: dán link `bilibili.com/video/BV…`, `b23.tv/…`, `douyin.com/video/<id>`, `v.douyin.com/…` hoặc `ixigua.com/<id>` vào ô phân tích; video nhiều phần (P1, P2…) mỗi phần là một tập. Douyin/Ixigua cần chọn trình duyệt lấy cookie trong Cài đặt (`src/native/ytdlp.js`)
 
 ### 2. 🎯 Chọn tập và tải xuống

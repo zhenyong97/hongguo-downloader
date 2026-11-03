@@ -752,12 +752,13 @@ const SEARCH_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 const SEARCH_TIMEOUT_MS = 15000;
 
-let searchWindow = null;
-let searchWindowReady = null;
+// Mỗi trang một cửa sổ ẩn riêng (hongguo / bili) để tìm song song; trong cùng một cửa sổ thì chạy tuần tự
+const sniffWindows = {}; // key -> { win, ready }
 
-function getSearchWindow() {
-  if (searchWindow && !searchWindow.isDestroyed()) return searchWindow;
-  searchWindow = new BrowserWindow({
+function getSearchWindow(key = 'hongguo') {
+  const slot = sniffWindows[key];
+  if (slot && !slot.win.isDestroyed()) return slot.win;
+  const searchWindow = new BrowserWindow({
     width: 1100,
     height: 820,
     show: false,
@@ -772,15 +773,15 @@ function getSearchWindow() {
   });
   // Điều hướng trong site giữ nguyên trong cùng cửa sổ, tránh bật cửa sổ mới
   searchWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith(SEARCH_SITE)) {
+    if (key === 'hongguo' && url.startsWith(SEARCH_SITE)) {
       searchWindow.loadURL(url);
     }
     return { action: 'deny' };
   });
   searchWindow.on('closed', () => {
-    searchWindow = null;
-    searchWindowReady = null;
+    delete sniffWindows[key];
   });
+  sniffWindows[key] = { win: searchWindow, ready: null };
   return searchWindow;
 }
 
@@ -844,6 +845,39 @@ const SNIFFER_JS = `(() => {
 })()`;
 
 /**
+ * Bộ dò trang tìm kiếm Bilibili (search.bilibili.com): trang tự gọi API của nó như trình duyệt thường,
+ * ở đây chỉ đọc thẻ video. Dựa vào link /video/BV... là chính, tên class chỉ dùng cho phần phụ (thời lượng, tác giả).
+ * series_id trả về theo ID nội bộ của src/native/ytdlp.js (yt-bili-<BV>) để luồng tải yt-dlp dùng thẳng được.
+ */
+const BILI_SEARCH_URL = (kw) => `https://search.bilibili.com/all?keyword=${encodeURIComponent(kw)}`;
+const BILI_SNIFFER_JS = `(() => {
+  const out = [];
+  const seen = new Set();
+  for (const a of document.querySelectorAll('a[href*="/video/BV"]')) {
+    const m = (a.getAttribute('href') || '').match(/\\/video\\/(BV[0-9A-Za-z]{10})/);
+    if (!m || seen.has(m[1])) continue;
+    const card = a.closest('.bili-video-card') || a;
+    const img = card.querySelector('img');
+    const tit = card.querySelector('[class*="info--tit"]');
+    const title = ((tit && (tit.getAttribute('title') || tit.textContent)) || (img && img.getAttribute('alt')) || '').trim();
+    if (!title) continue;
+    seen.add(m[1]);
+    const src = (img && (img.getAttribute('src') || img.getAttribute('data-src'))) || '';
+    const text = (sel) => ((card.querySelector(sel) || {}).textContent || '').trim();
+    out.push({
+      series_id: 'yt-bili-' + m[1],
+      series_title: title,
+      cover: src.startsWith('//') ? 'https:' + src : src,
+      episode_count: 0,
+      tags: [],
+      note: ['Bilibili', text('[class*="duration"]'), text('[class*="info--author"]')].filter(Boolean).join(' · '),
+      url: 'https://www.bilibili.com/video/' + m[1] + '/',
+    });
+  }
+  return JSON.stringify(out);
+})()`;
+
+/**
  * Thông tin bổ sung của trang danh mục: metadata phân trang + các bộ lọc thể loại có sẵn.
  * Thể loại được trích từ các link /category/<cat>/<genre> trong trang, tránh hardcode.
  */
@@ -887,9 +921,10 @@ const BROWSE_META_JS = `(() => {
   return JSON.stringify(out);
 })()`;
 
-/** Cấu trúc trang giống trang tìm kiếm, trang danh mục dùng lại cùng bộ dò + hàng đợi tuần tự */
-async function runSniffOnUrl(url, label) {
-  const win = getSearchWindow();
+/** Cấu trúc trang giống trang tìm kiếm, trang danh mục dùng lại cùng bộ dò + hàng đợi tuần tự; Bilibili dùng cửa sổ và bộ dò riêng */
+async function runSniffOnUrl(url, label, key = 'hongguo') {
+  const win = getSearchWindow(key);
+  const sniffer = key === 'bili' ? BILI_SNIFFER_JS : SNIFFER_JS;
 
   // Chạy tuần tự trong cùng một cửa sổ, tránh các lần điều hướng song song cắt ngang nhau
   const task = async () => {
@@ -906,7 +941,7 @@ async function runSniffOnUrl(url, label) {
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 400));
       try {
-        const raw = await win.webContents.executeJavaScript(SNIFFER_JS, true);
+        const raw = await win.webContents.executeJavaScript(sniffer, true);
         last = JSON.parse(raw || '[]');
       } catch (e) {
         last = [];
@@ -932,7 +967,7 @@ async function runSniffOnUrl(url, label) {
       .filter((r) => r.series_id && r.series_title)
       .map((r) => ({
         ...r,
-        url: `${SEARCH_SITE}/detail?series_id=${r.series_id}`,
+        url: r.url || `${SEARCH_SITE}/detail?series_id=${r.series_id}`,
       }));
 
     console.log(`[${label}] Tìm thấy ${results.length} phim`);
@@ -940,9 +975,10 @@ async function runSniffOnUrl(url, label) {
   };
 
   // Tuần tự hóa
-  const prev = searchWindowReady || Promise.resolve();
+  const slot = sniffWindows[key];
+  const prev = slot.ready || Promise.resolve();
   const next = prev.then(task, task);
-  searchWindowReady = next.catch(() => {});
+  slot.ready = next.catch(() => {});
   return next;
 }
 
@@ -998,13 +1034,17 @@ ipcMain.handle('search-series', async (event, keyword) => {
   const kw = String(keyword || '').trim();
   if (!kw) return { success: false, error: 'Vui lòng nhập từ khóa tìm kiếm' };
   try {
-    // Tìm song song trên Hongguo và PineDrama, một bên lỗi không ảnh hưởng bên kia
-    const [hg, pd] = await Promise.allSettled([runSearchSniff(kw), reelfren.search(kw)]);
+    // Tìm song song trên Hongguo, PineDrama và Bilibili, một bên lỗi không ảnh hưởng bên khác
+    const [hg, pd, bl] = await Promise.allSettled([
+      runSearchSniff(kw), reelfren.search(kw), runSniffOnUrl(BILI_SEARCH_URL(kw), 'BiliSearch', 'bili'),
+    ]);
     const hgRes = hg.status === 'fulfilled' ? hg.value : { success: false, error: hg.reason && hg.reason.message };
     const pdList = pd.status === 'fulfilled' ? pd.value : [];
     if (pd.status === 'rejected') console.warn('[Search] PineDrama thất bại:', pd.reason && pd.reason.message);
-    if (!hgRes.success && !pdList.length) return hgRes;
-    return { ...hgRes, success: true, results: [...(hgRes.results || []), ...pdList] };
+    const blList = (bl.status === 'fulfilled' && bl.value.results) || [];
+    if (bl.status === 'rejected') console.warn('[Search] Bilibili thất bại:', bl.reason && bl.reason.message);
+    if (!hgRes.success && !pdList.length && !blList.length) return hgRes;
+    return { ...hgRes, success: true, results: [...(hgRes.results || []), ...pdList, ...blList] };
   } catch (error) {
     console.error('[Search] Thất bại:', error.message);
     return { success: false, error: error.message };
@@ -1024,14 +1064,17 @@ ipcMain.handle('search-resolve', async (event, seriesId) => {
   }
 });
 
-// Hiển thị cửa sổ tìm kiếm (dự phòng khi quá thời gian: để người dùng tự thao tác)
+// Hiển thị cửa sổ tìm kiếm (dự phòng khi quá thời gian: để người dùng tự thao tác, kể cả giải captcha Bilibili)
 ipcMain.handle('search-window-show', async (event, visible) => {
-  const win = getSearchWindow();
-  if (visible) {
-    win.show();
-    win.focus();
-  } else {
-    win.hide();
+  getSearchWindow();
+  for (const { win } of Object.values(sniffWindows)) {
+    if (win.isDestroyed()) continue;
+    if (visible) {
+      win.show();
+      win.focus();
+    } else {
+      win.hide();
+    }
   }
   return { success: true };
 });

@@ -3,7 +3,7 @@ import './HongguoDownload.css';
 import { Search, Film, RefreshCw, ExternalLink, Download } from './icons';
 
 /**
- * SearchPanel —— dùng trình duyệt nhúng bắt kết quả tìm kiếm của hongguoduanju.com
+ * SearchPanel —— dùng trình duyệt nhúng bắt kết quả tìm kiếm của hongguoduanju.com và search.bilibili.com
  * Có series_id thì chuyển cho component cha chạy luồng sẵn có «lấy đủ tập + chọn tập tải xuống».
  */
 function SearchPanel({ onSelectSeries, onSwitchToInput, onNavigate }) {
@@ -116,7 +116,7 @@ function SearchPanel({ onSelectSeries, onSwitchToInput, onNavigate }) {
         </button>
       </div>
       <p className="settings-hint" style={{ marginTop: 8 }}>
-        Từ khóa sẽ được tìm trên hongguoduanju.com (trình duyệt tích hợp) và PineDrama (qua reelfren); chọn một kết quả để lấy toàn bộ tập và tải xuống ngay.
+        Từ khóa sẽ được tìm trên hongguoduanju.com, Bilibili (trình duyệt tích hợp) và PineDrama (qua reelfren); chọn một kết quả để lấy toàn bộ tập và tải xuống ngay.
       </p>
 
       {error && <div className="alert alert-error">{error}</div>}
@@ -179,7 +179,7 @@ function SearchPanel({ onSelectSeries, onSwitchToInput, onNavigate }) {
                         <RefreshCw size={13} className="spin" /> Đang lấy danh sách tập…
                       </>
                     ) : (
-                      <>series_id {item.series_id}</>
+                      item.note || <>series_id {item.series_id}</>
                     )}
                   </div>
                 </div>
