@@ -4,12 +4,12 @@ import { Play, Film, Download, Check, RefreshCw, Layers, X, Trash2, ChevronDown,
 import { vi } from '../zhLabels';
 
 /**
- * Player —— 内置播放器
+ * Player —— trình phát tích hợp
  *
- * 设计要点：
- *  - 直接播本地 file:// 文件（实测支持 seek），无需流服务器
- *  - 「边下边看」：下一集若还在下载，显示等待态并轮询，下完自动接上
- *  - 断点续播：按 series_id 记住看到第几集、第几秒
+ * Điểm thiết kế chính:
+ *  - Phát trực tiếp file local qua file:// (đã thử, hỗ trợ seek), không cần stream server
+ *  - «Vừa tải vừa xem»: nếu tập kế tiếp còn đang tải thì hiện trạng thái chờ và thăm dò, tải xong tự phát tiếp
+ *  - Xem tiếp từ chỗ dừng: nhớ đã xem đến tập nào, giây thứ mấy theo series_id
  */
 function Player({ target, onNavigate }) {
   const [seriesList, setSeriesList] = useState([]);
@@ -17,15 +17,15 @@ function Player({ target, onNavigate }) {
   const [detail, setDetail] = useState(null); // { series_title, episodes: [...], total, completedCount }
   const [currentIndex, setCurrentIndex] = useState(1);
   const [autoNext, setAutoNext] = useState(true);
-  const [waitingFor, setWaitingFor] = useState(null); // 正在等待下载的集号
+  const [waitingFor, setWaitingFor] = useState(null); // Số tập đang chờ tải xong
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState(false);
   const [merging, setMerging] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);   // 剧集选择面板
+  const [pickerOpen, setPickerOpen] = useState(false);   // Bảng chọn phim
   const [pickerQuery, setPickerQuery] = useState('');
   const [dismissedCount, setDismissedCount] = useState(0);
 
-  // 在线播放（内存缓存，不落盘）
+  // Phát trực tuyến (cache trong bộ nhớ, không ghi ra đĩa)
   const [onlineVid, setOnlineVid] = useState(null);
   const [onlineUrl, setOnlineUrl] = useState('');
   const [onlineProgress, setOnlineProgress] = useState(null); // {percent, phase}
@@ -33,20 +33,20 @@ function Player({ target, onNavigate }) {
   const [downloadedMap, setDownloadedMap] = useState({}); // series_id -> {completed,total}
   const [storageMap, setStorageMap] = useState({});       // series_id -> {files,bytes}
   const [storageTotal, setStorageTotal] = useState({ files: 0, bytes: 0 });
-  const [autoDelete, setAutoDelete] = useState(false);    // 看完自动删本地文件
+  const [autoDelete, setAutoDelete] = useState(false);    // Xem xong tự xóa file trên máy
   const [confirmAsk, setConfirmAsk] = useState(null);     // {title, message, danger, onOk}
 
-  // 兼容模式：本机解不了 HEVC 时转码为 H.264
+  // Chế độ tương thích: chuyển mã sang H.264 khi máy không giải mã được HEVC
   const [autoCompat, setAutoCompat] = useState(true);
-  const [compatMap, setCompatMap] = useState({});         // vidIndex -> 转码后 url
+  const [compatMap, setCompatMap] = useState({});         // vidIndex -> url sau khi chuyển mã
   const [compatProgress, setCompatProgress] = useState(null); // {vidIndex, percent}
-  const [decodeFailed, setDecodeFailed] = useState(false);    // 当前集解不出画面
+  const [decodeFailed, setDecodeFailed] = useState(false);    // Tập hiện tại không giải mã ra hình
   const [compatCache, setCompatCache] = useState({ files: 0, bytes: 0 });
-  const [mergeAsk, setMergeAsk] = useState(false);            // 合并格式选择
+  const [mergeAsk, setMergeAsk] = useState(false);            // Chọn định dạng gộp
 
   const videoRef = useRef(null);
   const toastTimer = useRef(null);
-  const pendingSeekRef = useRef(0); // 切集后要跳转的秒数
+  const pendingSeekRef = useRef(0); // Số giây cần tua tới sau khi chuyển tập
   const lastSavedRef = useRef(0);
   const stateRef = useRef({ currentIndex, autoNext, activeSeriesId });
   stateRef.current = { currentIndex, autoNext, activeSeriesId };
@@ -57,14 +57,14 @@ function Player({ target, onNavigate }) {
     toastTimer.current = setTimeout(() => setToast(null), 3000);
   }, []);
 
-  // 载入已登记的剧集列表
+  // Tải danh sách phim đã đăng ký
   const loadSeriesList = useCallback(async () => {
     const list = (await window.electronAPI.getSeriesList()) || [];
     setSeriesList(list);
     return list;
   }, []);
 
-  // 载入某剧的分集状态
+  // Tải trạng thái các tập của một phim
   const loadDetail = useCallback(async (seriesId, opts = {}) => {
     if (!seriesId) return null;
     const res = await window.electronAPI.getSeriesEpisodes(seriesId);
@@ -103,7 +103,7 @@ function Player({ target, onNavigate }) {
     window.electronAPI.getSettings().then((s) => {
       if (s) {
         setAutoDelete(s.auto_delete_watched === true);
-        setAutoCompat(s.compat_mode !== false); // 默认开启
+        setAutoCompat(s.compat_mode !== false); // Mặc định bật
       }
     });
     window.electronAPI.compatCacheStatus().then((r) => {
@@ -120,9 +120,9 @@ function Player({ target, onNavigate }) {
   }, []);
 
   /**
-   * 注意：以下三个用到 episodes 的函数必须定义在 episodes 之后。
-   * useCallback 的依赖数组在「定义时」就会求值，若提前引用后声明的 const
-   * 会触发 TDZ（Cannot access 'X' before initialization）导致整页白屏。
+   * Lưu ý: ba hàm dưới đây dùng episodes nên bắt buộc phải định nghĩa sau episodes.
+   * Mảng dependency của useCallback được tính ngay «lúc định nghĩa», nếu tham chiếu sớm một const khai báo sau
+   * sẽ gây lỗi TDZ (Cannot access 'X' before initialization) làm trắng cả trang.
    */
   const toggleAutoCompat = async () => {
     const next = !autoCompat;
@@ -144,7 +144,7 @@ function Player({ target, onNavigate }) {
     } catch (_) {}
   };
 
-  // 打开剧集面板时，补全各剧的下载进度（只拉一次）
+  // Khi mở bảng phim, bổ sung tiến độ tải của từng phim (chỉ lấy một lần)
   useEffect(() => {
     if (!pickerOpen) return;
     let cancelled = false;
@@ -180,7 +180,7 @@ function Player({ target, onNavigate }) {
       setLoading(true);
       const list = await loadSeriesList();
       if (list.length) {
-        // 浏览页点播时优先用指定剧，否则选最近更新的那部
+        // Khi phát từ trang duyệt thì ưu tiên phim được chỉ định, nếu không thì chọn phim cập nhật gần nhất
         const wanted = target && target.seriesId ? String(target.seriesId) : '';
         const exists = wanted && list.some((s) => String(s.series_id) === wanted);
         const sorted = [...list].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
@@ -189,12 +189,12 @@ function Player({ target, onNavigate }) {
         const d = await loadDetail(sid);
 
         if (exists && target.vidIndex) {
-          // 点播指定集：优先播它（若尚未下载则交给等待逻辑）
+          // Phát tập được chỉ định: ưu tiên phát tập đó (nếu chưa tải thì giao cho logic chờ)
           setCurrentIndex(target.vidIndex);
           const ep = d && d.episodes.find((e) => e.vid_index === target.vidIndex);
           if (ep && ep.status !== 'completed') setWaitingFor(target.vidIndex);
         } else {
-          // 恢复断点
+          // Khôi phục vị trí đang xem
           const saved = await window.electronAPI.getPlaybackPosition(sid);
           if (saved && saved.vid_index) setCurrentIndex(saved.vid_index);
           else if (d) {
@@ -212,7 +212,7 @@ function Player({ target, onNavigate }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadSeriesList, loadDetail]);
 
-  // 浏览页再次点播（组件已挂载时）
+  // Phát lại từ trang duyệt (khi component đã mount)
   const handledTargetRef = useRef(0);
   useEffect(() => {
     if (!target || !target.seriesId || !target.ts) return;
@@ -238,7 +238,7 @@ function Player({ target, onNavigate }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target && target.ts]);
 
-  // 轮询：让「正在下载」的集实时更新，并在等待时自动接上
+  // Thăm dò: cập nhật tập «đang tải» theo thời gian thực và tự phát tiếp khi đang chờ
   useEffect(() => {
     if (!activeSeriesId) return;
     const timer = setInterval(async () => {
@@ -248,7 +248,7 @@ function Player({ target, onNavigate }) {
       if (wf != null) {
         const ep = d.episodes.find((e) => e.vid_index === wf);
         if (ep && ep.status === 'completed') {
-          // 等待中的下一集下好了 -> 自动切过去
+          // Tập kế tiếp đang chờ đã tải xong -> tự chuyển sang
           setWaitingFor(null);
           goToEpisode(wf, true);
         }
@@ -266,7 +266,7 @@ function Player({ target, onNavigate }) {
 
   const playableCount = episodes.filter((e) => e.status === 'completed').length;
 
-  /** 转码当前集为 H.264 后播放（解决本机无法解码 HEVC 的黑屏问题） */
+  /** Chuyển mã tập hiện tại sang H.264 rồi phát (khắc phục màn hình đen khi máy không giải mã được HEVC) */
   const startCompatPlay = useCallback(
     async (vidIndex) => {
       const ep = episodes.find((e) => e.vid_index === vidIndex);
@@ -305,8 +305,8 @@ function Player({ target, onNavigate }) {
     showToast(r && r.count > 0 ? `Đã dọn bộ nhớ đệm chuyển mã, giải phóng ${fmtSize(r.freed)}` : 'Bộ nhớ đệm chuyển mã đã trống');
   };
 
-  // 播放中若始终解不出画面（videoWidth 一直为 0），判定为解码不兼容。
-  // 必须定义在早返回之前 —— hooks 不能出现在条件分支之后。
+  // Nếu khi phát mãi không ra hình (videoWidth luôn bằng 0) thì coi là giải mã không tương thích.
+  // Phải định nghĩa trước các lệnh return sớm —— hooks không được nằm sau nhánh điều kiện.
   const handlePlaying = useCallback(() => {
     setDecodeFailed(false);
     const idx = currentIndex;
@@ -325,8 +325,8 @@ function Player({ target, onNavigate }) {
   }, [autoCompat, compatMap, currentIndex, startCompatPlay, showToast]);
 
   /**
-   * 在线播放：让主进程把该集下载+解密到内存，拿回可播放的流地址。
-   * 不写本地文件、不占用下载目录，看完可选择清理内存缓存。
+   * Phát trực tuyến: nhờ main process tải + giải mã tập này vào bộ nhớ, lấy về địa chỉ stream phát được.
+   * Không ghi file ra máy, không chiếm thư mục tải xuống, xem xong có thể dọn cache bộ nhớ.
    */
   const startOnlinePlay = useCallback(
     async (vidIndex) => {
@@ -364,13 +364,13 @@ function Player({ target, onNavigate }) {
     [episodes, activeSeriesId, showToast, refreshCacheInfo]
   );
 
-  // 切集
+  // Chuyển tập
   const goToEpisode = useCallback(
     (vidIndex, keepPlaying = true) => {
       setCurrentIndex(vidIndex);
       setWaitingFor(null);
       pendingSeekRef.current = 0;
-      // 换集时清掉上一集的在线流（下载好的集直接走本地文件）
+      // Khi đổi tập thì xóa stream trực tuyến của tập trước (tập đã tải thì phát thẳng file trên máy)
       const ep = episodes.find((e) => e.vid_index === vidIndex);
       if (!ep || ep.status === 'completed') {
         setOnlineVid(null);
@@ -379,7 +379,7 @@ function Player({ target, onNavigate }) {
       }
       const v = videoRef.current;
       if (v && keepPlaying) {
-        // 等 src 更新后再播
+        // Đợi src cập nhật rồi mới phát
         setTimeout(() => {
           v.play().catch(() => {});
         }, 80);
@@ -388,7 +388,7 @@ function Player({ target, onNavigate }) {
     [episodes]
   );
 
-  // 找下一集（按集号顺序）
+  // Tìm tập kế tiếp (theo thứ tự số tập)
   const findNext = useCallback(
     (fromIndex) => {
       const idx = episodes.findIndex((e) => e.vid_index === fromIndex);
@@ -406,12 +406,12 @@ function Player({ target, onNavigate }) {
     [episodes]
   );
 
-  // 播放结束 -> 连播（未下载的集自动转在线播放，做到「不下载也能连着看」）
+  // Phát xong -> phát liên tục (tập chưa tải tự chuyển sang phát trực tuyến, để «không tải vẫn xem liền mạch»)
   const handleEnded = useCallback(() => {
     const { currentIndex: ci, autoNext: an, activeSeriesId: sid } = stateRef.current;
     const finished = episodes.find((e) => e.vid_index === ci);
 
-    // 看完自动删：先把刚看完这集的本地文件清掉，再决定下一集怎么播
+    // Xem xong tự xóa: xóa file trên máy của tập vừa xem trước, rồi mới quyết định cách phát tập kế tiếp
     if (autoDelete && finished && finished.status === 'completed' && sid) {
       window.electronAPI.deleteEpisodeFile(sid, ci).then((r) => {
         if (r && r.success && r.count > 0) {
@@ -434,19 +434,19 @@ function Player({ target, onNavigate }) {
     if (nextIsLocal) {
       goToEpisode(next.vid_index, true);
     } else if (next.status === 'downloading' || next.status === 'pending') {
-      // 正在下载：等它下完自动接上
+      // Đang tải: đợi tải xong rồi tự phát tiếp
       setWaitingFor(next.vid_index);
       setCurrentIndex(next.vid_index);
       showToast(`Tập ${next.vid_index} đang tải, tải xong sẽ tự động phát`);
     } else {
-      // 未下载（或被自动删了）-> 直接在线播放
+      // Chưa tải (hoặc đã bị tự xóa) -> phát trực tuyến luôn
       showToast(`Tập ${next.vid_index} chuyển sang phát trực tuyến`);
       startOnlinePlay(next.vid_index);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [findNext, goToEpisode, showToast, startOnlinePlay, autoDelete, episodes, refreshCacheInfo, loadDetail]);
 
-  // 记住播放进度（每 5 秒 + 切集时）
+  // Ghi nhớ tiến độ xem (mỗi 5 giây + khi chuyển tập)
   const persistPosition = useCallback(() => {
     const v = videoRef.current;
     const { activeSeriesId: sid, currentIndex: ci } = stateRef.current;
@@ -464,7 +464,7 @@ function Player({ target, onNavigate }) {
     };
   }, [persistPosition]);
 
-  // 切集 / 恢复断点
+  // Chuyển tập / khôi phục vị trí đang xem
   useEffect(() => {
     const v = videoRef.current;
     if (!v || !current || current.status !== 'completed') return;
@@ -482,7 +482,7 @@ function Player({ target, onNavigate }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current && current.fileUrl]);
 
-  // 快捷键
+  // Phím tắt
   useEffect(() => {
     const onKey = (e) => {
       const v = videoRef.current;
@@ -531,7 +531,7 @@ function Player({ target, onNavigate }) {
     pendingSeekRef.current = saved ? saved.currentTime || 0 : 0;
   };
 
-  // 从列表移除一部短剧（只取消登记，不删本地文件）
+  // Gỡ một phim khỏi danh sách (chỉ hủy đăng ký, không xóa file trên máy)
   const removeSeries = async (sid, title) => {
     const res = await window.electronAPI.removeSeries(sid);
     if (!res || !res.success) {
@@ -602,7 +602,7 @@ function Player({ target, onNavigate }) {
     showToast(`Đã thêm ${ok} tập vào hàng đợi tải xuống`);
   };
 
-  // 一键合并当前这部剧（弹出格式选择）
+  // Gộp phim hiện tại (hiện hộp chọn định dạng)
   const mergeThisSeries = async (compatible) => {
     setMerging(true);
     setMergeAsk(false);
@@ -624,7 +624,7 @@ function Player({ target, onNavigate }) {
     }
   };
 
-  // ===== 渲染 =====
+  // ===== Render =====
   if (loading) {
     return <div className="player-container"><div className="player-empty">Đang tải…</div></div>;
   }
@@ -661,7 +661,7 @@ function Player({ target, onNavigate }) {
     );
   }
 
-  // 可播放：本地已下载走 file://，否则走在线内存流；兼容模式下优先用转码后的文件
+  // Có thể phát: đã tải thì dùng file://, nếu không thì dùng stream trực tuyến trong bộ nhớ; ở chế độ tương thích ưu tiên file đã chuyển mã
   const compatUrl = current ? compatMap[current.vid_index] : null;
   const isOnlinePlaying = onlineVid && current && current.vid === onlineVid && onlineUrl;
   const canPlay = !!(current && (compatUrl || (current.status === 'completed' && current.fileUrl) || isOnlinePlaying));
@@ -716,7 +716,7 @@ function Player({ target, onNavigate }) {
         </div>
       </div>
 
-      {/* 剧集选择：当前剧 + 下拉管理面板（替代原来会越堆越长的横条） */}
+      {/* Chọn phim: phim hiện tại + bảng quản lý dạng thả xuống (thay cho thanh ngang cũ ngày càng dài ra) */}
       <div className="player-series-row">
         <div className="player-series-current">
           <span className="player-series-label">Đang phát</span>
@@ -880,7 +880,7 @@ function Player({ target, onNavigate }) {
         </div>
       )}
 
-      {/* 播放区 */}
+      {/* Vùng phát */}
       <div className="player-stage">
         {canPlay ? (
           <video
@@ -955,7 +955,7 @@ function Player({ target, onNavigate }) {
           </div>
         )}
 
-        {/* 兼容模式浮层：解码失败提示 / 转码进度 */}
+        {/* Lớp phủ chế độ tương thích: báo lỗi giải mã / tiến độ chuyển mã */}
         {compatProgress && compatProgress.vidIndex === currentIndex && (
           <div className="compat-overlay">
             <RefreshCw size={26} className="spin" />
@@ -989,7 +989,7 @@ function Player({ target, onNavigate }) {
         )}
       </div>
 
-      {/* 播放中的集信息 */}
+      {/* Thông tin tập đang phát */}
       {current && (
         <div className="player-now">
           <span className="player-now-title">
@@ -1002,7 +1002,7 @@ function Player({ target, onNavigate }) {
         </div>
       )}
 
-      {/* 分集列表 */}
+      {/* Danh sách tập */}
       <div className="player-episodes">
         {episodes.map((ep) => {
           const isCurrent = ep.vid_index === currentIndex;
@@ -1016,7 +1016,7 @@ function Player({ target, onNavigate }) {
                   setWaitingFor(ep.vid_index);
                   setCurrentIndex(ep.vid_index);
                 } else {
-                  // 未下载：直接在线播放，不必先下载
+                  // Chưa tải: phát trực tuyến luôn, không cần tải trước
                   startOnlinePlay(ep.vid_index);
                 }
               }}
@@ -1049,7 +1049,7 @@ function Player({ target, onNavigate }) {
 
       {toast && <div className="dm-toast dm-toast-success" onClick={() => setToast(null)}>{toast}</div>}
 
-      {/* 合并格式选择 */}
+      {/* Chọn định dạng gộp */}
       {mergeAsk && (
         <div className="player-confirm-mask" onClick={() => setMergeAsk(false)}>
           <div className="player-confirm" onClick={(e) => e.stopPropagation()}>
@@ -1075,7 +1075,7 @@ function Player({ target, onNavigate }) {
         </div>
       )}
 
-      {/* 删除确认 */}
+      {/* Xác nhận xóa */}
       {confirmAsk && (        <div className="player-confirm-mask" onClick={() => setConfirmAsk(null)}>
           <div className="player-confirm" onClick={(e) => e.stopPropagation()}>
             <div className="player-confirm-title">

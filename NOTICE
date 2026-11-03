@@ -1,58 +1,58 @@
-NOTICE —— 来源与修改说明
-=========================
+NOTICE —— Nguồn gốc và thông tin sửa đổi
+=========================================
 
-本软件（红果短剧下载器 / hongguo-downloader）是基于他人开源项目的**修改版本**。
-依照 GNU General Public License v3.0 第 5(a) 条，特此声明如下。
+Phần mềm này (Trình tải phim ngắn Hongguo / hongguo-downloader) là **phiên bản đã sửa đổi** của một dự án mã nguồn mở của người khác.
+Theo Điều 5(a) của GNU General Public License v3.0, xin tuyên bố như sau.
 
-一、上游项目
+1. Dự án thượng nguồn
+---------------------
+Tên        : hongguo-downloader（红果短剧全集批量下载器）
+Kho mã     : https://github.com/327044572/hongguo-downloader
+Giấy phép  : GNU General Public License v3.0
+
+2. Tuyên bố sửa đổi
+-------------------
+Phiên bản này **đã sửa đổi mã nguồn thượng nguồn**, thời gian sửa đổi bắt đầu từ tháng 9 năm 2026.
+
+So với phiên bản thượng nguồn, các thay đổi chính gồm:
+
+  1. Thêm trang «Duyệt»: duyệt danh sách phim theo phân loại và thể loại, có phân trang
+  2. Thêm tìm kiếm phim (dò bằng trình duyệt nhúng)
+  3. Thêm trình phát tích hợp: vừa tải vừa xem, tự động phát liên tục, xem tiếp từ chỗ dừng, bảng quản lý phim
+  4. Thêm xem trực tuyến (bộ nhớ đệm trong RAM, không ghi ra ổ đĩa)
+  5. Thêm chế độ tương thích: tự động chuyển mã sang H.264 khi không giải mã được HEVC
+  6. Thêm «Gộp một chạm» toàn bộ tập (ffmpeg tích hợp)
+  7. Thêm chức năng dọn file: xoá theo phim, tự xoá sau khi xem, thống kê dung lượng
+  8. Thêm cấu hình proxy mạng
+  9. Sửa lỗi số luồng tải đồng thời không có hiệu lực (bộ lập lịch bị chặn khiến số luồng luôn là 1)
+  10. Sửa lỗi file đã có trên ổ đĩa bị nhận nhầm là «chưa tải» khi thiếu bản ghi tác vụ
+  11. Gỡ bỏ nội dung quảng bá và nhận diện thương hiệu trong phiên bản thượng nguồn
+  12. Gỡ bỏ hành vi tự mở trang chính thức khi khởi động
+  13. Viết lại README và các script đóng gói
+
+Toàn bộ lịch sử các thay đổi trên có thể xem qua lịch sử commit của kho mã này.
+
+3. Giấy phép
 ------------
-名称   : hongguo-downloader（红果短剧全集批量下载器）
-仓库   : https://github.com/327044572/hongguo-downloader
-许可   : GNU General Public License v3.0
+Phiên bản sửa đổi này **toàn bộ tiếp tục được cấp phép theo GNU General Public License v3.0**,
+toàn văn giấy phép xem tại file `LICENSE` trong thư mục này.
 
-二、修改声明
-------------
-本版本**对上游源码进行了修改**，修改时间自 2026 年 9 月起。
+Phiên bản này không thêm bất kỳ hạn chế nào khác.
 
-相对于上游版本，主要的修改内容如下：
+4. Mã nguồn tương ứng
+---------------------
+Điều 6 của GPLv3 yêu cầu khi phân phối bản nhị phân phải cung cấp đầy đủ mã nguồn tương ứng.
+Phần mềm này là dự án mã nguồn mở, toàn bộ mã nguồn có trong kho mã này; nếu bạn nhận được bản nhị phân của phần mềm từ nơi khác,
+có thể yêu cầu bên phân phối cung cấp mã nguồn, hoặc lấy từ kho mã này.
 
-  1. 新增「浏览」页：按分类与题材浏览剧集列表，支持分页
-  2. 新增剧集搜索（内嵌浏览器嗅探）
-  3. 新增内置播放器：边下边看、自动连播、断点续播、剧集管理面板
-  4. 新增在线播放（内存缓存，不写入磁盘）
-  5. 新增兼容模式：HEVC 无法解码时自动转码为 H.264
-  6. 新增「一键合并」全集（内置 ffmpeg）
-  7. 新增文件清理功能：按剧删除、看完自动删、占用统计
-  8. 新增网络代理配置
-  9. 修复下载并发数不生效（调度器阻塞导致并发恒为 1）
-  10. 修复任务记录缺失时磁盘上已有文件被误判为「未下载」
-  11. 移除上游版本中的推广内容与品牌标识
-  12. 移除启动时自动打开官网的行为
-  13. 重写 README 与打包脚本
-
-上述修改的完整记录可通过本仓库的提交历史查看。
-
-三、许可证
-----------
-本修改版本**整体继续以 GNU General Public License v3.0 授权**，
-许可证全文见本目录下的 `LICENSE` 文件。
-
-本版本不附加任何额外限制。
-
-四、对应源码
-------------
-GPLv3 第 6 条要求分发二进制时提供对应的完整源码。
-本软件为开源项目，完整源码见本仓库；如你是从别处获得本软件的二进制版本，
-可向分发者索取源码，或从本仓库获取。
-
-五、第三方组件
---------------
-本软件包含以下第三方组件，其版权归各自作者所有：
+5. Thành phần bên thứ ba
+------------------------
+Phần mềm này bao gồm các thành phần bên thứ ba sau, bản quyền thuộc về tác giả tương ứng:
 
   - Electron            MIT License
   - React / ReactDOM    MIT License
   - axios               MIT License
-  - FFmpeg              GPLv3（内置，用于合并与转码）
+  - FFmpeg              GPLv3 (tích hợp sẵn, dùng để gộp và chuyển mã)
 
-各组件许可证详情见 `THIRD-PARTY-NOTICES.md`。
-随软件分发的 FFmpeg 许可证全文位于 `resources/bin/` 目录下。
+Chi tiết giấy phép của từng thành phần xem tại `THIRD-PARTY-NOTICES.md`.
+Toàn văn giấy phép FFmpeg phân phối kèm phần mềm nằm trong thư mục `resources/bin/`.

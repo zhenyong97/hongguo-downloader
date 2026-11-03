@@ -4,13 +4,13 @@ import { Film, RefreshCw, ExternalLink, Download, Play, Check, X, Sparkles } fro
 import { vi } from '../zhLabels';
 
 /**
- * Browse —— 分类淘剧
+ * Browse —— duyệt phim theo danh mục
  *
- * 数据链路：
- *   内嵌浏览器嗅探分类页 -> 卡片(series_id/剧名/封面/集数/标签)
- *   点卡片 -> 复用 search-resolve 拉全集并写入短剧档案
- *         -> 复用 get-series-episodes 拿到每集「已下载/下载中/未下载」状态
- *         -> 跳播放器 或 走既有批量下载
+ * Luồng dữ liệu:
+ *   Trình duyệt nhúng bắt dữ liệu trang danh mục -> thẻ (series_id/tên phim/ảnh bìa/số tập/nhãn)
+ *   Bấm thẻ -> dùng lại search-resolve để lấy đủ tập và ghi vào hồ sơ phim
+ *         -> dùng lại get-series-episodes để lấy trạng thái từng tập «đã tải/đang tải/chưa tải»
+ *         -> chuyển sang trình phát hoặc dùng luồng tải hàng loạt sẵn có
  */
 function Browse({ onNavigate }) {
   const [categories, setCategories] = useState([]);
@@ -24,7 +24,7 @@ function Browse({ onNavigate }) {
   const [error, setError] = useState('');
   const [pageTitle, setPageTitle] = useState('');
 
-  // 详情抽屉
+  // Ngăn kéo chi tiết
   const [detail, setDetail] = useState(null); // { series_id, series_title, cover, episodes: [...] }
   const [detailLoading, setDetailLoading] = useState(false);
   const [rangeInput, setRangeInput] = useState('');
@@ -32,8 +32,8 @@ function Browse({ onNavigate }) {
   const [submitting, setSubmitting] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
 
-  // ===== 高级筛选：多页扫描 + 条件过滤 =====
-  const [scan, setScan] = useState(null); // null=只看当前页；{ pool, done, total, running }
+  // ===== Lọc nâng cao: quét nhiều trang + lọc theo điều kiện =====
+  const [scan, setScan] = useState(null); // null=chỉ xem trang hiện tại; { pool, done, total, running }
   const [scanPages, setScanPages] = useState(5);
   const scanStop = useRef(false);
   const [keyword, setKeyword] = useState('');
@@ -41,7 +41,7 @@ function Browse({ onNavigate }) {
   const [minEp, setMinEp] = useState('');
   const [maxEp, setMaxEp] = useState('');
 
-  // 已下载统计（按 series_id -> 已下载集数）
+  // Thống kê đã tải (theo series_id -> số tập đã tải)
   const [downloadedMap, setDownloadedMap] = useState({});
   const [toast, setToast] = useState(null);
 
@@ -135,7 +135,7 @@ function Browse({ onNavigate }) {
     setTagRule({});
   };
 
-  // 逐页抓取当前分类/题材，最多 scanPages 页，按 series_id 去重
+  // Lấy lần lượt từng trang của danh mục/thể loại hiện tại, tối đa scanPages trang, loại trùng theo series_id
   const startScan = async () => {
     scanStop.current = false;
     const want = Math.max(1, parseInt(scanPages, 10) || 1);
@@ -167,7 +167,7 @@ function Browse({ onNavigate }) {
 
   const source = scan ? scan.pool : results;
 
-  // 来源里出现过的标签，按出现次数排序
+  // Các nhãn xuất hiện trong nguồn, sắp xếp theo số lần xuất hiện
   const tagOptions = useMemo(() => {
     const cnt = {};
     for (const r of source) for (const t of r.tags || []) cnt[t] = (cnt[t] || 0) + 1;
@@ -201,7 +201,7 @@ function Browse({ onNavigate }) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // ===== 打开某部剧 =====
+  // ===== Mở một phim =====
   const openSeries = async (item) => {
     setDetailLoading(true);
     setDetail(null);
@@ -214,7 +214,7 @@ function Browse({ onNavigate }) {
         return;
       }
       const data = res.data;
-      // 合并下载状态
+      // Gộp trạng thái tải xuống
       const epRes = await window.electronAPI.getSeriesEpisodes(item.series_id);
       const statusMap = {};
       if (epRes && epRes.success) {
@@ -227,7 +227,7 @@ function Browse({ onNavigate }) {
         fileUrl: statusMap[ep.vid_index] ? statusMap[ep.vid_index].fileUrl : null,
       }));
       setDetail({ ...data, episodes, completedCount: episodes.filter((e) => e.status === 'completed').length });
-      // 默认全选未下载的
+      // Mặc định chọn hết các tập chưa tải
       setSelectedIdx(new Set(episodes.filter((e) => e.status !== 'completed').map((e) => e.vid_index)));
     } catch (e) {
       showToast('Mở thất bại: ' + e.message, 'error');
@@ -243,7 +243,7 @@ function Browse({ onNavigate }) {
     setSelectedIdx(next);
   };
 
-  // 区间快选：1-50 / 前10 / 后30 / 全选 / 清空
+  // Chọn nhanh theo khoảng: 1-50 / 10 tập đầu / 30 tập cuối / chọn tất cả / bỏ chọn
   const applyRange = (expr) => {
     if (!detail) return;
     const total = detail.episodes.length;
@@ -295,7 +295,7 @@ function Browse({ onNavigate }) {
     }
   };
 
-  // 立即播放：优先从第一集已下载的开始
+  // Phát ngay: ưu tiên bắt đầu từ tập đã tải đầu tiên
   const playNow = async () => {
     if (!detail) return;
     const first = detail.episodes.find((e) => e.status === 'completed');
@@ -307,7 +307,7 @@ function Browse({ onNavigate }) {
     setDetail(null);
   };
 
-  // 一键下载本页全部剧的所有分集
+  // Tải tất cả các tập của mọi phim trong trang này
   const downloadAllOnPage = async () => {
     if (!shown.length) return;
     if (!window.confirm(`Tải toàn bộ tập của ${shown.length} phim đang hiển thị?`)) return;
@@ -367,7 +367,7 @@ function Browse({ onNavigate }) {
         </div>
       </div>
 
-      {/* 分类 tab */}
+      {/* Tab danh mục */}
       <div className="browse-cats">
         {(categories.length ? categories : [{ slug: 'real-drama', label: 'Phim người đóng' }]).map((c) => (
           <button
@@ -380,7 +380,7 @@ function Browse({ onNavigate }) {
         ))}
       </div>
 
-      {/* 题材 chips */}
+      {/* Chip thể loại */}
       {meta.genres.length > 0 && (
         <div className="browse-genres">
           <button
@@ -401,7 +401,7 @@ function Browse({ onNavigate }) {
         </div>
       )}
 
-      {/* 高级筛选 */}
+      {/* Lọc nâng cao */}
       <div className="browse-filter">
         <div className="browse-filter-row">
           <input
@@ -504,7 +504,7 @@ function Browse({ onNavigate }) {
         </div>
       )}
 
-      {/* 分页 */}
+      {/* Phân trang */}
       {totalPages > 1 && !scan && (
         <div className="browse-pager">
           <button className="pager-item" disabled={page <= 1} onClick={() => gotoPage(page - 1)}>‹</button>
@@ -523,7 +523,7 @@ function Browse({ onNavigate }) {
         </div>
       )}
 
-      {/* ===== 剧集详情抽屉 ===== */}
+      {/* ===== Ngăn kéo chi tiết phim ===== */}
       {(detail || detailLoading) && (
         <div className="browse-drawer-mask" onClick={() => !detailLoading && setDetail(null)}>
           <div className="browse-drawer" onClick={(e) => e.stopPropagation()}>

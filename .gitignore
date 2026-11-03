@@ -1,18 +1,18 @@
-# 依赖
+# Thư viện phụ thuộc
 node_modules/
 dist/
 dist-react/
 
-# 内置的 ffmpeg 二进制（约 167MB，从网络获取，不纳入版本管理）
-# 打包前执行：node scripts/setup-ffmpeg.js 或手动放入 build/ffmpeg/
-# 注意：许可证文本（*.txt / COPYING.* / LICENSE.md）必须随源码保留，
-#       因此这里只忽略目录内容，再用反向规则把它们重新纳入。
+# File nhị phân ffmpeg tích hợp (khoảng 167MB, tải từ mạng, không đưa vào quản lý phiên bản)
+# Trước khi đóng gói chạy: node scripts/setup-ffmpeg.js hoặc tự đặt vào build/ffmpeg/
+# Lưu ý: văn bản giấy phép (*.txt / COPYING.* / LICENSE.md) bắt buộc phải giữ cùng mã nguồn,
+#       vì vậy ở đây chỉ bỏ qua nội dung thư mục, rồi dùng quy tắc phủ định để đưa chúng vào lại.
 build/ffmpeg/*
 !build/ffmpeg/*.txt
 !build/ffmpeg/COPYING.*
 !build/ffmpeg/LICENSE.md
 
-# 构建与打包输出
+# Đầu ra build và đóng gói
 release/
 out/
 .webpack/
@@ -22,7 +22,7 @@ out/
 *.app
 *.AppImage
 
-# 临时文件与缓存
+# File tạm và cache
 .zcode/
 .vscode/
 .idea/
@@ -35,6 +35,6 @@ yarn-debug.log*
 .electron-cache/
 .eb-cache/
 
-# 本地配置
+# Cấu hình cục bộ
 config.json
 settings.json

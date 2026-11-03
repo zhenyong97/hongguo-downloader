@@ -1,20 +1,20 @@
 /**
- * setup-winCodeSign.js —— Windows 打包前置环境准备
+ * setup-winCodeSign.js —— chuẩn bị môi trường trước khi đóng gói cho Windows
  *
- * 背景：
- *   electron-builder 打包 Windows 时会下载 winCodeSign-2.6.0.7z，其中包含两个
- *   macOS 用的符号链接（darwin/10.12/lib/libcrypto.dylib、libssl.dylib）。
- *   7-Zip 在 Windows 上创建符号链接需要管理员权限或开启「开发者模式」，
- *   非管理员环境下 7za 会以退出码 2 结束，electron-builder 反复重试后中止打包。
+ * Bối cảnh:
+ *   khi đóng gói cho Windows, electron-builder sẽ tải winCodeSign-2.6.0.7z, trong đó có hai
+ *   symlink dành cho macOS (darwin/10.12/lib/libcrypto.dylib, libssl.dylib).
+ *   7-Zip tạo symlink trên Windows cần quyền quản trị viên hoặc bật "Developer Mode",
+ *   nếu không có quyền quản trị, 7za sẽ kết thúc với mã thoát 2, electron-builder thử lại nhiều lần rồi hủy đóng gói.
  *
- * 本脚本做的事：
- *   借助 electron-builder 自带的 app-builder 把该压缩包解压到一个**固定目录**，
- *   之后配合 node_modules 里的小补丁（basename 会加入 .dsh-bak）即可跳过重复解压。
- *   注意：想重新生成时，请先把 .dsh-bak 备份改回原名。
+ * Script này làm gì:
+ *   dùng app-builder có sẵn trong electron-builder để giải nén file nén đó vào một **thư mục cố định**,
+ *   sau đó kết hợp với bản vá nhỏ trong node_modules (basename sẽ thêm .dsh-bak) là bỏ qua được việc giải nén lại.
+ *   Lưu ý: muốn tạo lại thì hãy đổi tên bản sao lưu .dsh-bak về tên gốc trước.
  *
- * 用法：
+ * Cách dùng:
  *   node scripts/setup-winCodeSign.js
- *   然后正常执行：npm run build
+ *   sau đó chạy bình thường: npm run build
  */
 const { execFile } = require('child_process');
 const fs = require('fs');
@@ -31,20 +31,20 @@ const MIRROR =
 const URL = `${MIRROR}winCodeSign-2.6.0/winCodeSign-2.6.0.7z`;
 
 if (process.platform !== 'win32') {
-  console.log('非 Windows 平台，无需此步骤。');
+  console.log('Không phải Windows, không cần bước này.');
   process.exit(0);
 }
 
 if (fs.existsSync(path.join(LOCK, 'windows-10', 'x64', 'signtool.exe'))) {
-  console.log('winCodeSign 已就绪：' + LOCK);
+  console.log('winCodeSign đã sẵn sàng: ' + LOCK);
   process.exit(0);
 }
 
 fs.mkdirSync(CACHE, { recursive: true });
 
-console.log('正在解压 winCodeSign（跳过 macOS 符号链接的报错不影响 Windows 文件）...');
+console.log('Đang giải nén winCodeSign (lỗi bỏ qua symlink macOS không ảnh hưởng tới file Windows)...');
 
-// app-builder 需要 PATH 里有 7za；electron-builder 运行时由 JS 层注入，这里手动补齐
+// app-builder cần có 7za trong PATH; khi chạy electron-builder thì lớp JS tự chèn vào, ở đây bổ sung thủ công
 const sevenZipDir = path.join(ROOT, 'node_modules', '7zip-bin', 'win', 'x64');
 const env = {
   ...process.env,
@@ -57,12 +57,12 @@ execFile(
   ['download-artifact', '--name', 'winCodeSign', '--url', URL],
   { cwd: ROOT, env },
   (err, stdout, stderr) => {
-    // 注意：那两个 macOS 符号链接会让 7za 返回退出码 2，app-builder 因此判定失败
-    // 并保留随机命名的临时目录；但 Windows 需要的文件其实已经解压完整。
-    // 所以这里不因 err 直接退出，而是按目录内容做校验。
+    // Lưu ý: hai symlink macOS đó khiến 7za trả về mã thoát 2, nên app-builder coi là thất bại
+    // và giữ lại thư mục tạm có tên ngẫu nhiên; nhưng các file Windows cần thực ra đã được giải nén đầy đủ.
+    // Vì vậy ở đây không thoát ngay khi có err, mà kiểm tra theo nội dung thư mục.
     const parent = path.join(CACHE, 'winCodeSign');
     if (!fs.existsSync(parent)) {
-      console.error('解压目录不存在，app-builder 输出：');
+      console.error('Thư mục giải nén không tồn tại, output của app-builder:');
       console.error(stderr || stdout || (err && err.message));
       process.exit(1);
     }
@@ -71,7 +71,7 @@ execFile(
       fs.existsSync(path.join(d, 'windows-10', 'x64', 'signtool.exe')) &&
       fs.existsSync(path.join(d, 'rcedit-x64.exe'));
 
-    // 随机目录名可能是纯数字，也可能是别的；统一按内容筛选
+    // Tên thư mục ngẫu nhiên có thể toàn số hoặc dạng khác; thống nhất lọc theo nội dung
     const dirs = fs
       .readdirSync(parent, { withFileTypes: true })
       .filter((d) => d.isDirectory())
@@ -79,9 +79,9 @@ execFile(
 
     const complete = dirs.find(isUsable);
     if (!complete) {
-      console.error('未找到解压完整的目录，app-builder 输出：');
+      console.error('Không tìm thấy thư mục giải nén đầy đủ, output của app-builder:');
       console.error(stderr || stdout || (err && err.message));
-      console.error('现有子目录：' + dirs.join(', '));
+      console.error('Các thư mục con hiện có: ' + dirs.join(', '));
       process.exit(1);
     }
 
@@ -92,6 +92,6 @@ execFile(
       .filter((f) => f.endsWith('.7z'))
       .forEach((f) => fs.rmSync(path.join(parent, f), { force: true }));
 
-    console.log('完成：' + LOCK);
+    console.log('Hoàn tất: ' + LOCK);
   }
 );

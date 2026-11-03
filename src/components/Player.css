@@ -42,7 +42,7 @@
   font-weight: 600;
 }
 
-/* 剧集选择行（替代原来会越堆越长的横条） */
+/* Hàng chọn phim (thay cho thanh ngang cũ ngày càng dài ra) */
 .player-series-row {
   display: flex;
   align-items: center;
@@ -97,7 +97,7 @@
   text-align: center;
 }
 
-/* 剧集管理面板 */
+/* Bảng quản lý phim */
 .series-picker {
   margin-bottom: 12px;
   border: 1px solid var(--border-color);
@@ -212,7 +212,7 @@
   background: var(--bg-inset);
 }
 
-/* 播放占位区按钮组 */
+/* Nhóm nút trong vùng giữ chỗ trình phát */
 .player-placeholder-actions {
   display: flex;
   gap: 10px;
@@ -220,7 +220,7 @@
   justify-content: center;
 }
 
-/* 正在在线播放的集标记 */
+/* Đánh dấu tập đang phát trực tuyến */
 .ep-online-dot {
   position: absolute;
   left: 4px;
@@ -240,7 +240,7 @@
   margin-top: 6px;
 }
 
-/* 兼容模式浮层（解码失败提示 / 转码进度） */
+/* Lớp phủ chế độ tương thích (báo lỗi giải mã / tiến độ chuyển mã) */
 .compat-overlay {
   position: absolute;
   inset: 0;
@@ -282,7 +282,7 @@
   color: #fff;
 }
 
-/* 占用统计与删除确认 */
+/* Thống kê dung lượng và xác nhận xóa */
 .series-picker-usage {
   flex: 1;
   font-size: 12px;
@@ -354,7 +354,7 @@
   margin-top: 18px;
 }
 
-/* 播放舞台 */
+/* Khu vực phát */
 .player-stage {
   width: 100%;
   aspect-ratio: 16 / 9;
@@ -396,7 +396,7 @@
   color: #8a8f99;
 }
 
-/* 深色占位区里的描边按钮：默认深色文字在深底上不可见，这里改用浅色 */
+/* Nút viền trong vùng giữ chỗ nền tối: chữ tối mặc định không nhìn thấy trên nền tối, nên đổi sang màu sáng */
 .player-placeholder .btn-outline {
   color: #e8eaed;
   border-color: rgba(255, 255, 255, 0.32);
@@ -423,7 +423,7 @@
   transition: width 0.3s;
 }
 
-/* 当前集信息 */
+/* Thông tin tập hiện tại */
 .player-now {
   display: flex;
   align-items: center;
@@ -463,7 +463,7 @@
 .player-now-status.status-completed { background: rgba(0, 180, 42, 0.12); color: var(--success); }
 .player-now-status.status-downloading { background: rgba(51, 112, 255, 0.12); color: var(--accent); }
 
-/* 分集网格 */
+/* Lưới danh sách tập */
 .player-episodes {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
@@ -507,14 +507,14 @@
   z-index: 2;
 }
 
-/* 未下载：灰色虚线 */
+/* Chưa tải: viền đứt nét màu xám */
 .ep-missing {
   border-style: dashed;
   color: var(--text-tertiary);
   opacity: 0.75;
 }
 
-/* 下载中：蓝色进度填充 */
+/* Đang tải: tô tiến độ màu xanh dương */
 .ep-downloading {
   color: var(--accent);
   border-color: rgba(51, 112, 255, 0.4);
@@ -540,14 +540,14 @@
   border-color: rgba(245, 63, 63, 0.3);
 }
 
-/* 已完成：绿色 */
+/* Đã xong: màu xanh lá */
 .ep-completed {
   border-color: rgba(0, 180, 42, 0.35);
   color: var(--text-primary);
   font-weight: 600;
 }
 
-/* 当前集：高亮描边 */
+/* Tập hiện tại: viền nổi bật */
 .ep-current {
   border-color: var(--accent) !important;
   box-shadow: 0 0 0 2px rgba(255, 77, 109, 0.18);

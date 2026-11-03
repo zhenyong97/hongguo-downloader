@@ -45,7 +45,7 @@
   margin-bottom: 18px;
 }
 
-/* 「去下载」推到最右侧（该行放不下时自然换行） */
+/* Đẩy «Đi tải xuống» sang sát phải (hàng không đủ chỗ thì tự xuống dòng) */
 .dm-toolbar-end {
   margin-left: auto;
 }
@@ -60,7 +60,7 @@
   font-size: 13px;
 }
 
-/* 一键暂停：实心警示色，和主色按钮区分开 */
+/* Tạm dừng tất cả: nền màu cảnh báo đặc, phân biệt với nút màu chủ đạo */
 .btn-danger-solid {
   background: var(--danger);
   border-color: var(--danger);
@@ -73,7 +73,7 @@
   border-color: #dc2626;
 }
 
-/* 并发运行状态条 */
+/* Thanh trạng thái chạy đồng thời */
 .dm-queue-bar {
   display: flex;
   align-items: center;
@@ -118,7 +118,7 @@
   color: var(--text-tertiary);
 }
 
-/* ===== 合并 ===== */
+/* ===== Gộp ===== */
 .merge-inline {
   display: flex;
   align-items: center;
@@ -196,7 +196,7 @@
   flex-shrink: 0;
 }
 
-/* 删除确认里的勾选项 */
+/* Ô tick trong hộp xác nhận xóa */
 .dm-confirm-check {
   display: flex;
   align-items: flex-start;

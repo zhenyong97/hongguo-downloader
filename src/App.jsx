@@ -17,7 +17,7 @@ const MENU = [
 export default function App() {
   const [page, setPage] = useState('browse');
   const [appInfo, setAppInfo] = useState(null); // { version, brand, appName }
-  const [playerTarget, setPlayerTarget] = useState(null); // 浏览页点播 -> 播放页选中
+  const [playerTarget, setPlayerTarget] = useState(null); // Phát từ trang duyệt -> chọn sẵn ở trang phát
 
   useEffect(() => {
     window.electronAPI.getAppInfo().then((info) => {
@@ -25,7 +25,7 @@ export default function App() {
     });
   }, []);
 
-  // 主进程发来的导航指令（例如浏览页点「立即播放」）
+  // Lệnh điều hướng từ main process (vd. bấm «Phát ngay» ở trang duyệt)
   useEffect(() => {
     if (!window.electronAPI.onNavigate) return undefined;
     return window.electronAPI.onNavigate((data) => {
@@ -53,7 +53,7 @@ export default function App() {
 
   return (
     <div className="app-layout">
-      {/* 左侧边栏 */}
+      {/* Thanh bên trái */}
       <div className="sidebar">
         <div className="sidebar-brand">
           <div className="logo">
@@ -86,7 +86,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* 右侧主体区域 */}
+      {/* Vùng nội dung chính bên phải */}
       <div className="main-wrapper">
         <div className="main-content">{renderPage()}</div>
       </div>

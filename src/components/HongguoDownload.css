@@ -101,7 +101,7 @@
   color: #4ade80;
 }
 
-/* 剧集 Header */
+/* Header phim */
 .series-header {
   display: flex;
   justify-content: space-between;
@@ -177,7 +177,7 @@
   gap: 12px;
 }
 
-/* 控件与筛选 */
+/* Điều khiển và bộ lọc */
 .controls-row {
   display: flex;
   justify-content: space-between;
@@ -255,7 +255,7 @@
   border-color: #ef4444;
 }
 
-/* 剧集网格 */
+/* Lưới tập phim */
 .episode-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
@@ -330,7 +330,7 @@
   to { transform: rotate(360deg); }
 }
 
-/* ===== 搜索 / 粘贴 模式切换 ===== */
+/* ===== Chuyển chế độ Tìm kiếm / Dán link ===== */
 .mode-tabs {
   display: flex;
   gap: 8px;
@@ -364,7 +364,7 @@
   border-bottom-color: var(--accent);
 }
 
-/* ===== 搜索结果 ===== */
+/* ===== Kết quả tìm kiếm ===== */
 .search-loading {
   display: flex;
   align-items: center;

@@ -3,19 +3,19 @@ import './HongguoDownload.css';
 import { Search, Film, RefreshCw, ExternalLink, Download } from './icons';
 
 /**
- * SearchPanel —— 通过内嵌浏览器嗅探 hongguoduanju.com 的搜索结果
- * 拿到 series_id 后交给父组件走既有的「拉全集 + 选集下载」流程。
+ * SearchPanel —— dùng trình duyệt nhúng bắt kết quả tìm kiếm của hongguoduanju.com
+ * Có series_id thì chuyển cho component cha chạy luồng sẵn có «lấy đủ tập + chọn tập tải xuống».
  */
 function SearchPanel({ onSelectSeries, onSwitchToInput, onNavigate }) {
   const [keyword, setKeyword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState(null); // null=未搜索, []=无结果
+  const [results, setResults] = useState(null); // null=chưa tìm, []=không có kết quả
   const [error, setError] = useState('');
   const [pageTitle, setPageTitle] = useState('');
   const [pickingId, setPickingId] = useState('');
   const [bulkBusy, setBulkBusy] = useState(false);
 
-  // 一键下载全部搜索结果的所有分集
+  // Tải tất cả các tập của mọi kết quả tìm kiếm
   const downloadAll = async () => {
     if (!results || !results.length) return;
     if (!window.confirm(`Tải toàn bộ tập của ${results.length} phim trong kết quả tìm kiếm?`)) return;
@@ -62,7 +62,7 @@ function SearchPanel({ onSelectSeries, onSwitchToInput, onNavigate }) {
     }
   };
 
-  // 选中某部剧 -> 拉取完整分集 -> 交给下载页
+  // Chọn một phim -> lấy đủ danh sách tập -> chuyển sang trang tải xuống
   const pick = async (item) => {
     setPickingId(item.series_id);
     setError('');

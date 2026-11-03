@@ -7,9 +7,9 @@ const API = "https://api5-normal-sinfonlineb.fqnovel.com";
 const UA = "com.phoenix.read/71532 (Linux; U; Android 9; SM-N9860; Build/PQ3A.190705.10241111;tt-ok/3.12.13.20)";
 const VIDEO_REFERER = "https://novelquickapp.com/";
 
-// ===== 官网网页版数据源（官方 App 接口不可用时的兜底）=====
-// 官网 player 页是服务端渲染的：完整分集 vid 列表与可直接下载的 MP4 直链
-// 都内嵌在 HTML 里，无需任何签名。走的是官网对普通用户开放的同一层。
+// ===== Nguồn dữ liệu bản web chính thức (dự phòng khi API của App chính thức không dùng được) =====
+// Trang player của web chính thức được render phía server: toàn bộ danh sách vid các tập và link MP4 tải trực tiếp
+// đều nhúng sẵn trong HTML, không cần chữ ký nào. Đây chính là lớp mà web chính thức mở cho người dùng thường.
 const SITE_ORIGIN = "https://hongguoduanju.com";
 const WEB_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 const WEB_REFERER = SITE_ORIGIN + "/";
@@ -78,25 +78,25 @@ const MODEL_BIZ_PARAM = {
   video_platform: 1024,
 };
 
-// 熔断：官方接口返回空响应（网关直接丢弃）时，一段时间内不再请求，直接走官网兜底，
-// 否则每集都要白等 3 次重试（实测约 13 秒/次）
+// Ngắt mạch: khi API chính thức trả về phản hồi rỗng (gateway bỏ luôn request), tạm ngừng gọi trong một khoảng thời gian và chuyển thẳng sang dự phòng web chính thức,
+// nếu không thì tập nào cũng phải chờ vô ích 3 lần thử lại (đo thực tế khoảng 13 giây/lần)
 const API_COOLDOWN_MS = 10 * 60 * 1000;
 let apiDownUntil = 0;
 
 /**
- * API 调用封装
+ * Hàm bọc gọi API
  */
 async function apiCall(apiPath, body, retries = 3) {
   if (Date.now() < apiDownUntil) throw new Error('đang không phản hồi, tạm bỏ qua');
   const q = { ...COMMON_QUERY, _rticket: Date.now().toString() };
   for (let i = 0; i < retries; i++) {
-    const signal = {}; // 供错误信息回溯（HTTP 状态 / 字节数 / CDN logid）
+    const signal = {}; // Dùng để truy vết trong thông báo lỗi (trạng thái HTTP / số byte / CDN logid)
     try {
       const res = await axios.post(API + apiPath, body, {
         params: q,
         headers: HEADERS,
         timeout: 25000,
-        // 200 + 空 body 时 axios 会解析成 ''，这里统一按原始字节处理便于判断
+        // Với 200 + body rỗng, axios sẽ parse thành ''; ở đây thống nhất xử lý theo byte thô để dễ kiểm tra
         responseType: 'arraybuffer',
         transformResponse: [(d) => d],
       });
@@ -108,7 +108,7 @@ async function apiCall(apiPath, body, retries = 3) {
         throw new Error(`HTTP ${res.status}`);
       }
       if (buf.length === 0) {
-        // 服务端返回 200 但无任何内容：网关在做业务处理前就丢弃了请求
+        // Server trả về 200 nhưng không có nội dung gì: gateway đã bỏ request trước khi xử lý nghiệp vụ
         const err = new Error(
           `API trả về phản hồi rỗng (HTTP 200, 0 byte)${signal.logid ? ' logid=' + signal.logid : ''}`
         );
@@ -125,7 +125,7 @@ async function apiCall(apiPath, body, retries = 3) {
         throw err;
       }
     } catch (err) {
-      // 空响应是确定性的拒绝，重试无意义
+      // Phản hồi rỗng là từ chối chắc chắn, thử lại cũng vô ích
       if (err.emptyResponse) apiDownUntil = Date.now() + API_COOLDOWN_MS;
       if (i === retries - 1 || err.emptyResponse) {
         if (err.detail === undefined) err.detail = signal;
@@ -136,9 +136,9 @@ async function apiCall(apiPath, body, retries = 3) {
   }
 }
 
-// ===== 官网网页版数据源实现 =====
+// ===== Triển khai nguồn dữ liệu bản web chính thức =====
 
-/** MP4 直链：去掉 HTML 转义并剥掉 Range 头，让 CDN 回整段 */
+/** Link MP4 trực tiếp: bỏ escape HTML và gỡ tham số Range để CDN trả về toàn bộ file */
 function normalizeVideoUrl(raw) {
   return String(raw || '')
     .replace(/\\u002F/g, '/')
@@ -148,13 +148,13 @@ function normalizeVideoUrl(raw) {
     .replace(/[?&]$/, '');
 }
 
-/** 从响应体里安全地取出某个字符串字段 */
+/** Lấy an toàn một trường chuỗi từ body phản hồi */
 function pickJsonString(text, key) {
   const m = text.match(new RegExp('"' + key + '"\\s*:\\s*"([^"]*)"'));
   return m ? m[1].replace(/\\u002F/g, '/').replace(/\\u0026/g, '&') : '';
 }
 
-/** 拉取官网页面 HTML */
+/** Tải HTML của trang web chính thức */
 async function fetchSiteHtml(url) {
   const res = await axios.get(url, {
     headers: {
@@ -171,8 +171,8 @@ async function fetchSiteHtml(url) {
 }
 
 /**
- * 官网兜底：从 player 页内嵌 JSON 取完整分集列表
- * vid_list 按下标即集数顺序（下标 i → 第 i+1 集）
+ * Dự phòng web chính thức: lấy toàn bộ danh sách tập từ JSON nhúng trong trang player
+ * Thứ tự chỉ số trong vid_list chính là thứ tự tập (chỉ số i → tập i+1)
  */
 async function fetchEpisodeListFromWeb(seriesId) {
   const html = await fetchSiteHtml(`${SITE_ORIGIN}/player/${encodeURIComponent(seriesId)}`);
@@ -204,15 +204,15 @@ async function fetchEpisodeListFromWeb(seriesId) {
     cover: cover || (episodes[0] && episodes[0].cover) || '',
     total: episodes.length,
     episodes,
-    source: 'web', // 标记来源，便于排查
+    source: 'web', // Đánh dấu nguồn để dễ tra lỗi
   };
 }
 
 /**
- * 官网兜底：取单集可直接下载的 MP4 直链
- * 官网页里内嵌的 main_url 是「已经可播」的地址，明文 MP4，无 CENC 加密，
- * 因此不需要 spade_a / 解密这一步。
- * sid 已知时用 /player/{sid}/{vid}；未知时退回 /player/_/{vid} 再自行解析。
+ * Dự phòng web chính thức: lấy link MP4 tải trực tiếp của một tập
+ * main_url nhúng trong trang web chính thức là địa chỉ "phát được ngay", MP4 không mã hóa, không có CENC,
+ * vì vậy không cần bước spade_a / giải mã.
+ * Khi biết sid thì dùng /player/{sid}/{vid}; không biết thì lùi về /player/_/{vid} rồi tự phân tích.
  */
 async function fetchPlayUrlFromWeb(vid, sid) {
   const candidates = [];
@@ -229,7 +229,7 @@ async function fetchPlayUrlFromWeb(vid, sid) {
 
       const videoUrl = normalizeVideoUrl(m[1]);
       if (!/^https?:\/\//i.test(videoUrl)) continue;
-      // 官网对不存在/不公开的分集会回落到剧集默认页（第 1 集），直链里的 vid 不是本集就不能用
+      // Với tập không tồn tại/không công khai, web chính thức sẽ trả về trang mặc định của phim (tập 1); vid trong link trực tiếp không phải tập này thì không dùng được
       if (!videoUrl.includes(String(vid))) continue;
       return { url: videoUrl, spadeA: null, codec: '', source: 'web' };
     } catch (e) {
@@ -241,7 +241,7 @@ async function fetchPlayUrlFromWeb(vid, sid) {
 }
 
 /**
- * 分享链接 -> series_id
+ * Link chia sẻ -> series_id
  */
 async function resolveSeriesId(shareUrl) {
   const trimmed = String(shareUrl || '').trim();
@@ -275,7 +275,7 @@ async function resolveSeriesId(shareUrl) {
 }
 
 /**
- * 获取全集剧集列表
+ * Lấy danh sách toàn bộ các tập
  */
 async function fetchEpisodeList(seriesId) {
   const body = {
@@ -287,7 +287,7 @@ async function fetchEpisodeList(seriesId) {
   try {
     j = await apiCall("/novel/player/multi_video_detail/preload/v1", body);
   } catch (e) {
-    // 官方 App 接口不可用时，自动降级到官网网页版数据源
+    // Khi API của App chính thức không dùng được, tự động chuyển xuống nguồn dữ liệu bản web chính thức
     console.warn('[Hongguo] detail API không khả dụng, chuyển sang nguồn dữ liệu trang web chính thức:', e.message);
     try {
       const webData = await fetchEpisodeListFromWeb(seriesId);
@@ -328,8 +328,8 @@ async function fetchEpisodeList(seriesId) {
 }
 
 /**
- * 单条视频流的清晰度评分
- * 返回 { defNum, pixels, bitrate }，数值越大越清晰
+ * Chấm điểm độ nét của một luồng video
+ * Trả về { defNum, pixels, bitrate }, giá trị càng lớn càng nét
  */
 function streamScore(v) {
   const meta = v.video_meta || {};
@@ -349,8 +349,8 @@ function streamScore(v) {
 }
 
 /**
- * 解析单个 video_model JSON
- * 选流优先级：清晰度标签 > 像素 > 编码格式 > 码率（取最高分辨率）
+ * Phân tích một JSON video_model
+ * Thứ tự ưu tiên chọn luồng: nhãn độ nét > số điểm ảnh > định dạng mã hóa > bitrate (lấy độ phân giải cao nhất)
  */
 function parseModelVideo(vm) {
   if (typeof vm !== 'string') return [null, null, null];
@@ -366,11 +366,11 @@ function parseModelVideo(vm) {
     if (codec === 'bytevc1') return 1;
     return 2;
   };
-  // 比较两条流：返回 >0 表示 a 更清晰
+  // So sánh hai luồng: trả về >0 nghĩa là a nét hơn
   const cmp = (a, b) => {
     if (a.defNum !== b.defNum) return a.defNum - b.defNum;
     if (a.pixels !== b.pixels) return a.pixels - b.pixels;
-    if (a.codecRank !== b.codecRank) return b.codecRank - a.codecRank; // rank 越小越好
+    if (a.codecRank !== b.codecRank) return b.codecRank - a.codecRank; // rank càng nhỏ càng tốt
     return a.bitrate - b.bitrate;
   };
   let best = null;
@@ -389,7 +389,7 @@ function parseModelVideo(vm) {
 }
 
 /**
- * 获取单集播放直链与 spade_a 加密 key
+ * Lấy link phát trực tiếp của một tập và key mã hóa spade_a
  */
 async function fetchPlayUrlSingle(vid, sid) {
   const body = {
@@ -405,9 +405,9 @@ async function fetchPlayUrlSingle(vid, sid) {
     if (url) return { url, spadeA, codec, source: 'api' };
   } catch (e) {
     apiErr = e.message;
-    // 落到下面的官网兜底
+    // Rơi xuống phần dự phòng web chính thức bên dưới
   }
-  // 官方 App 接口不可用时，改用官网内嵌的 MP4 直链（明文，无需解密）
+  // Khi API của App chính thức không dùng được, chuyển sang link MP4 trực tiếp nhúng trong web chính thức (không mã hóa, không cần giải mã)
   try {
     const web = await fetchPlayUrlFromWeb(vid, sid);
     if (web && web.url) return web;
@@ -419,7 +419,7 @@ async function fetchPlayUrlSingle(vid, sid) {
 }
 
 /**
- * FFmpeg 兼容 Base64 解码
+ * Giải mã Base64 tương thích FFmpeg
  */
 function avBase64Decode(s) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -462,7 +462,7 @@ function avBase64Decode(s) {
 }
 
 /**
- * spade_a -> 16 字节 AES Key
+ * spade_a -> AES Key 16 byte
  */
 function deriveKey(spadeA) {
   if (!spadeA) return null;
@@ -515,7 +515,7 @@ function deriveKey(spadeA) {
 }
 
 /**
- * AES-128-ECB 加密
+ * Mã hóa AES-128-ECB
  */
 function aes128EcbEncrypt(key16, data) {
   const cipher = crypto.createCipheriv('aes-128-ecb', key16, null);
@@ -524,7 +524,7 @@ function aes128EcbEncrypt(key16, data) {
 }
 
 /**
- * CENC-AES-CTR 解密 sample
+ * Giải mã sample CENC-AES-CTR
  */
 function decryptSample(key, nonce, cipher) {
   if (!cipher || cipher.length === 0) return Buffer.alloc(0);
@@ -543,7 +543,7 @@ function decryptSample(key, nonce, cipher) {
 }
 
 /**
- * MP4 Box 结构解析
+ * Phân tích cấu trúc MP4 Box
  */
 function parseBoxes(data, start, end) {
   const boxes = [];
@@ -570,7 +570,7 @@ function parseBoxes(data, start, end) {
 }
 
 /**
- * 重建 moov box
+ * Dựng lại moov box
  */
 function rebuildMoov(data, moovOff, moovSize, top) {
   const moovBox = top.find(b => b.typ === 'moov');
@@ -691,9 +691,9 @@ function rebuildMoov(data, moovOff, moovSize, top) {
 }
 
 /**
- * 解密 CENC-AES-CTR 加密的 MP4（内存版）
- * 输入一个完整的加密 MP4 Buffer，返回解密并重建过 moov 的 Buffer。
- * 注意：会就地修改传入的 Buffer（调用方应独占它）。
+ * Giải mã MP4 được mã hóa CENC-AES-CTR (bản xử lý trong bộ nhớ)
+ * Đầu vào là một Buffer MP4 mã hóa hoàn chỉnh, trả về Buffer đã giải mã và dựng lại moov.
+ * Lưu ý: sẽ sửa trực tiếp Buffer truyền vào (bên gọi phải dùng riêng nó).
  */
 function decryptMp4Buffer(data, key) {
   const total = data.length;
@@ -823,7 +823,7 @@ function decryptMp4Buffer(data, key) {
 }
 
 /**
- * 解密 MP4 文件并保存
+ * Giải mã file MP4 và lưu lại
  */
 function decryptMp4File(srcPath, dstPath, key) {
   const data = fs.readFileSync(srcPath);

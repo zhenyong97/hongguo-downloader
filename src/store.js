@@ -1,7 +1,7 @@
 /**
- * store.js - 精简持久化模块
- * 用单个 JSON 文件保存「设置」与「下载任务」，替代原项目里的 sql.js 数据库 + electron-store，
- * 减少依赖，方便独立打包。
+ * store.js - module lưu trữ gọn nhẹ
+ * Dùng một file JSON duy nhất để lưu "cài đặt" và "tác vụ tải", thay cho cơ sở dữ liệu sql.js + electron-store của dự án gốc,
+ * giảm phụ thuộc, tiện đóng gói độc lập.
  */
 const fs = require('fs');
 const path = require('path');
@@ -58,7 +58,7 @@ function saveTasks(tasks) {
   flush();
 }
 
-// ===== 短剧档案（让播放页在没有下载任务时也能列出完整分集）=====
+// ===== Hồ sơ phim ngắn (để trang phát vẫn liệt kê đủ các tập khi không có tác vụ tải) =====
 function getSeries() {
   const c = loadCache();
   if (!Array.isArray(c.series)) c.series = [];
@@ -70,7 +70,7 @@ function saveSeries(list) {
   flush();
 }
 
-// ===== 播放进度（断点续播）=====
+// ===== Tiến độ phát (xem tiếp từ chỗ đã dừng) =====
 function getPlayback() {
   const c = loadCache();
   if (!c.playback || typeof c.playback !== 'object') c.playback = {};
@@ -82,7 +82,7 @@ function savePlayback(map) {
   flush();
 }
 
-// ===== 合并任务记录 =====
+// ===== Lịch sử tác vụ gộp =====
 function getMergeTasks() {
   const c = loadCache();
   if (!Array.isArray(c.mergeTasks)) c.mergeTasks = [];

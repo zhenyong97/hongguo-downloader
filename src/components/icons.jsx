@@ -1,5 +1,5 @@
-// lucide 风格线条 SVG 图标库（stroke 1.75、24x24 viewBox）
-// 用法：<Home size={18} /> —— size 控制宽高，className 可覆盖颜色（currentColor）
+// Bộ icon SVG nét mảnh kiểu lucide (stroke 1.75, viewBox 24x24)
+// Cách dùng: <Home size={18} /> —— size quy định rộng/cao, className có thể ghi đè màu (currentColor)
 
 import React from 'react';
 

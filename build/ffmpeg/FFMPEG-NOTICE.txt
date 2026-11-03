@@ -1,44 +1,44 @@
-FFmpeg —— 第三方组件许可说明
-================================
+FFmpeg —— Thông tin giấy phép thành phần bên thứ ba
+=====================================================
 
-本目录下的 ffmpeg.exe 与 ffprobe.exe 是随本软件一起分发的第三方程序，
-用于「一键合并」的分片拼接与「兼容模式」的格式转码。
+ffmpeg.exe và ffprobe.exe trong thư mục này là chương trình bên thứ ba được phân phối kèm phần mềm này,
+dùng để nối các phân đoạn cho «Gộp một chạm» và chuyển đổi định dạng cho «Chế độ tương thích».
 
-构建信息
---------
-版本       : FFmpeg 7.1-essentials_build
-来源       : https://www.gyan.dev/ffmpeg/builds/
-官方源码   : https://ffmpeg.org/download.html
-             https://github.com/FFmpeg/FFmpeg
-版权       : Copyright (c) 2000-2024 the FFmpeg developers
+Thông tin build
+---------------
+Phiên bản       : FFmpeg 7.1-essentials_build
+Nguồn           : https://www.gyan.dev/ffmpeg/builds/
+Mã nguồn gốc    : https://ffmpeg.org/download.html
+                  https://github.com/FFmpeg/FFmpeg
+Bản quyền       : Copyright (c) 2000-2024 the FFmpeg developers
 
-许可证
-------
-该构建的配置中包含 `--enable-gpl --enable-version3`，因此其许可证为
-**GNU General Public License version 3（GPLv3）**。
+Giấy phép
+---------
+Cấu hình của bản build này có `--enable-gpl --enable-version3`, vì vậy giấy phép của nó là
+**GNU General Public License version 3 (GPLv3)**.
 
-随本目录附带的许可证全文：
+Toàn văn giấy phép đi kèm trong thư mục này:
 
-  COPYING.GPLv3      GPLv3 全文（本构建适用的主许可证）
-  COPYING.GPLv2      GPLv2 全文（FFmpeg 部分文件的许可证）
-  COPYING.LGPLv2.1   LGPLv2.1 全文（FFmpeg 部分文件的许可证）
-  LICENSE.md         FFmpeg 官方的许可证说明
+  COPYING.GPLv3      toàn văn GPLv3 (giấy phép chính áp dụng cho bản build này)
+  COPYING.GPLv2      toàn văn GPLv2 (giấy phép của một số file trong FFmpeg)
+  COPYING.LGPLv2.1   toàn văn LGPLv2.1 (giấy phép của một số file trong FFmpeg)
+  LICENSE.md         thông tin giấy phép chính thức của FFmpeg
 
-获取对应源码
-------------
-GPLv3 要求分发二进制时提供对应的完整源码。FFmpeg 的源码可从以下地址免费获取：
+Lấy mã nguồn tương ứng
+----------------------
+GPLv3 yêu cầu khi phân phối bản nhị phân phải cung cấp đầy đủ mã nguồn tương ứng. Mã nguồn FFmpeg có thể tải miễn phí tại:
 
   https://ffmpeg.org/download.html
   https://github.com/FFmpeg/FFmpeg
 
-如需与本软件所附带二进制完全对应的源码，可联系本软件的分发者索取，
-或按照 gyan.dev 公布的构建配置自行编译：
+Nếu cần mã nguồn tương ứng chính xác với bản nhị phân đi kèm phần mềm này, có thể yêu cầu bên phân phối phần mềm cung cấp,
+hoặc tự biên dịch theo cấu hình build do gyan.dev công bố:
 
   --enable-gpl --enable-version3 --enable-libx264 --enable-libx265 ...
 
-（完整配置见 `ffmpeg -version` 输出的 configuration 一行）
+(Cấu hình đầy đủ xem dòng configuration trong kết quả của `ffmpeg -version`)
 
-说明
-----
-FFmpeg 是独立的第三方程序，与本软件之间通过命令行调用交互。
-本软件仅调用其公开的命令行接口，未修改 FFmpeg 源码。
+Ghi chú
+-------
+FFmpeg là chương trình bên thứ ba độc lập, tương tác với phần mềm này qua lời gọi dòng lệnh.
+Phần mềm này chỉ gọi giao diện dòng lệnh công khai của nó, không sửa đổi mã nguồn FFmpeg.

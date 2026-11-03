@@ -1,15 +1,15 @@
 /**
- * reelfren.js - 第二数据源：经 reelfren 的 API 获取 PineDrama（TikTok 出品）短剧
+ * reelfren.js - nguồn dữ liệu thứ hai: lấy phim ngắn PineDrama (do TikTok sản xuất) qua API của reelfren
  *
- * 接口（对照 TJ-Plugins 的 ReelFren 插件，2026-11-03 实测）：
- *   列表 : /api/home?provider=pinedrama&category=0|1&offset=0&lang=vi -> { data: [{ id, title, cover, intro, episodes }] }
- *   搜索 : /api/search?provider=pinedrama&q=Q&lang=vi&offset=0        -> { data, hasMore }（每页 20 部）
- *   播放 : /api/video?provider=P&id=ID&ep=N&lang=vi&server=1&cv=v21
- *          -> { title, totalEpisodes, locked, videoUrl, qualityList, kid? }，直链为明文 MP4，无需解密
- * reelfren.net 网页被 Cloudflare 挑战拦住，但下面这些主机上的 API 可以直接拿到 JSON。
+ * API (đối chiếu plugin ReelFren của TJ-Plugins, đo thực tế 2026-11-03):
+ *   Danh sách: /api/home?provider=pinedrama&category=0|1&offset=0&lang=vi -> { data: [{ id, title, cover, intro, episodes }] }
+ *   Tìm kiếm : /api/search?provider=pinedrama&q=Q&lang=vi&offset=0        -> { data, hasMore } (mỗi trang 20 phim)
+ *   Phát     : /api/video?provider=P&id=ID&ep=N&lang=vi&server=1&cv=v21
+ *          -> { title, totalEpisodes, locked, videoUrl, qualityList, kid? }, link trực tiếp là MP4 không mã hóa, không cần giải mã
+ * Trang web reelfren.net bị thử thách Cloudflare chặn, nhưng API trên các host dưới đây vẫn lấy thẳng được JSON.
  *
- * 内部 ID（与红果的纯数字 ID 区分，且可直接用于文件名）：
- *   series_id = rf-<provider>-<id>      vid = rf-<provider>-<id>-<集号>
+ * ID nội bộ (phân biệt với ID toàn số của Hongguo, và dùng thẳng được làm tên file):
+ *   series_id = rf-<provider>-<id>      vid = rf-<provider>-<id>-<số tập>
  */
 const axios = require('axios');
 
@@ -19,7 +19,7 @@ const LANG = 'vi';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 const PREFIX = 'rf-';
 
-// 列表里见过的封面（/api/video 不返回封面）
+// Ảnh bìa đã thấy trong danh sách (/api/video không trả về ảnh bìa)
 const coverCache = new Map();
 
 const owns = (id) => String(id || '').startsWith(PREFIX);
@@ -30,7 +30,7 @@ function parseId(id) {
   return { provider: m[1], id: m[2], ep: m[3] ? Number(m[3]) : 0 };
 }
 
-/** 依次尝试各主机；网络错误 / 非 200 / 非 JSON（如 Cloudflare 页面）都换下一个 */
+/** Thử lần lượt từng host; lỗi mạng / không phải 200 / không phải JSON (như trang Cloudflare) thì chuyển sang host kế tiếp */
 async function getJson(pathAndQuery) {
   let lastErr;
   for (const host of HOSTS) {
@@ -62,7 +62,7 @@ function toCard(d) {
 
 const uniqueCards = (items) => [...new Map(items.map((d) => [String(d.id), d])).values()].map(toCard);
 
-/** PineDrama 首页只有两栏（category 0/1），offset 不起作用，所以只有一页 */
+/** Trang chủ PineDrama chỉ có hai mục (category 0/1), offset không có tác dụng nên chỉ có một trang */
 async function listHome() {
   const pages = await Promise.all(['0', '1'].map((c) =>
     getJson(`/api/home?provider=${PROVIDER}&category=${c}&offset=0&lang=${LANG}`).catch(() => null)));
@@ -82,9 +82,9 @@ async function videoInfo(provider, id, ep) {
 }
 
 /**
- * 分集列表：/api/video 返回总集数。剧名也取这里——它在各集之间稳定，
- * 而列表里的剧名偶尔是另一种译名，用它会让下载目录名前后不一。
- * 第 1 集偶尔临时 502，失败时改用第 2 集再取一次。
+ * Danh sách tập: /api/video trả về tổng số tập. Tên phim cũng lấy ở đây — nó ổn định giữa các tập,
+ * còn tên phim trong danh sách đôi khi là một bản dịch khác, dùng nó sẽ khiến tên thư mục tải về không thống nhất.
+ * Tập 1 đôi khi bị 502 tạm thời; nếu lỗi thì lấy lại bằng tập 2.
  */
 async function fetchEpisodeList(seriesId) {
   const sid = String(seriesId);
@@ -109,12 +109,12 @@ async function fetchEpisodeList(seriesId) {
   return { series_id: sid, series_title: title, cover, total, episodes, source: 'reelfren' };
 }
 
-/** 与 hongguo.fetchPlayUrlSingle 同形：spadeA 为空表示明文 MP4，调用方跳过解密 */
+/** Cùng dạng với hongguo.fetchPlayUrlSingle: spadeA rỗng nghĩa là MP4 không mã hóa, bên gọi bỏ qua bước giải mã */
 async function fetchPlayUrlSingle(vid) {
   try {
     const { provider, id, ep } = parseId(vid);
     const info = await videoInfo(provider, id, ep || 1);
-    // Melolo 一类的加密文件只能在网页里解密播放，下载下来是坏文件
+    // File mã hóa kiểu Melolo chỉ giải mã để phát được trên web, tải về sẽ là file hỏng
     if (info.kid) return { url: null, spadeA: null, codec: null, error: 'tập này bị mã hóa, chỉ phát được trên web' };
     if (info.locked) return { url: null, spadeA: null, codec: null, error: 'tập này bị khóa' };
     const url = info.videoUrl || ((info.qualityList || []).find((q) => q && q.url) || {}).url;
@@ -125,7 +125,7 @@ async function fetchPlayUrlSingle(vid) {
   }
 }
 
-/** 粘贴 reelfren 链接：/drama/<provider>/<id>-slug 或 /watch/<provider>/<id>-slug */
+/** Dán link reelfren: /drama/<provider>/<id>-slug hoặc /watch/<provider>/<id>-slug */
 function seriesIdFromUrl(input) {
   const m = String(input || '').match(/reelfren\.[a-z]+\/(?:drama|watch)\/([a-z0-9]+)\/([^?#/-]+)/i);
   return m ? `${PREFIX}${m[1].toLowerCase()}-${m[2]}` : null;

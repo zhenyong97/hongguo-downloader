@@ -35,7 +35,7 @@
   color: var(--text-secondary);
 }
 
-/* 分类 tab */
+/* Tab danh mục */
 .browse-cats {
   display: flex;
   gap: 8px;
@@ -60,7 +60,7 @@
 .browse-cat:hover { color: var(--text-primary); }
 .browse-cat.active { color: var(--accent); border-bottom-color: var(--accent); }
 
-/* 题材 chips */
+/* Chip thể loại */
 .browse-genres {
   display: flex;
   gap: 8px;
@@ -156,7 +156,7 @@
   font-size: 14px;
 }
 
-/* 卡片网格 */
+/* Lưới thẻ */
 .browse-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
@@ -270,7 +270,7 @@
   color: var(--text-tertiary);
 }
 
-/* 分页 */
+/* Phân trang */
 .browse-pager {
   display: flex;
   align-items: center;
@@ -315,7 +315,7 @@
   padding: 0 2px;
 }
 
-/* ===== 详情抽屉 ===== */
+/* ===== Ngăn kéo chi tiết ===== */
 .browse-drawer-mask {
   position: fixed;
   inset: 0;

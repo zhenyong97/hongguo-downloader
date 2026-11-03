@@ -1,7 +1,7 @@
 {
   "name": "hongguo-downloader",
   "version": "1.1.0",
-  "description": "红果短剧全集批量下载器（Windows 桌面版）",
+  "description": "Trình tải hàng loạt toàn bộ tập phim ngắn Hongguo (bản Windows)",
   "main": "main.js",
   "license": "GPL-3.0",
   "scripts": {
@@ -32,7 +32,7 @@
   },
   "build": {
     "appId": "com.hongguo.downloader",
-    "productName": "红果短剧下载器",
+    "productName": "TrinhTaiPhimNganHongguo",
     "directories": {
       "output": "dist"
     },
@@ -85,14 +85,15 @@
       "requestedExecutionLevel": "asInvoker"
     },
     "portable": {
-      "artifactName": "${productName}-${version}-便携版.${ext}"
+      "artifactName": "${productName}-${version}-BanDiDong.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "红果短剧下载器",
+      "shortcutName": "Trình tải phim ngắn Hongguo",
+      "uninstallDisplayName": "Trình tải phim ngắn Hongguo",
       "artifactName": "${productName}-Setup-${version}.${ext}"
     }
   }

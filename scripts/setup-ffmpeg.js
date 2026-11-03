@@ -1,16 +1,16 @@
 /**
- * setup-ffmpeg.js —— 打包前置：下载并放置内置 ffmpeg
+ * setup-ffmpeg.js —— bước chuẩn bị trước khi đóng gói: tải và đặt sẵn ffmpeg tích hợp
  *
- * 为什么需要：
- *   一键合并功能依赖 ffmpeg，但它体积较大（约 167MB），不纳入版本管理。
- *   clone 仓库后执行一次本脚本，即可把 ffmpeg.exe / ffprobe.exe 放到
- *   build/ffmpeg/，之后 `npm run build` 会通过 extraResources 打进安装包。
+ * Vì sao cần:
+ *   tính năng gộp một chạm cần ffmpeg, nhưng nó khá nặng (khoảng 167MB) nên không đưa vào quản lý phiên bản.
+ *   Sau khi clone repo, chạy script này một lần là ffmpeg.exe / ffprobe.exe được đặt vào
+ *   build/ffmpeg/, sau đó `npm run build` sẽ đóng chúng vào bộ cài qua extraResources.
  *
- * 若下载失败，也可以自行从 https://www.gyan.dev/ffmpeg/builds/ 下载
- * essentials 版，把 bin 目录里的 ffmpeg.exe 与 ffprobe.exe 复制到
- * build/ffmpeg/ 即可。
+ * Nếu tải thất bại, cũng có thể tự tải bản essentials từ https://www.gyan.dev/ffmpeg/builds/,
+ * rồi chép ffmpeg.exe và ffprobe.exe trong thư mục bin vào
+ * build/ffmpeg/ là xong.
  *
- * 用法：node scripts/setup-ffmpeg.js
+ * Cách dùng: node scripts/setup-ffmpeg.js
  */
 const fs = require('fs');
 const path = require('path');
@@ -32,7 +32,7 @@ function exists(p) {
 
 function download(url, dest, redirects = 0) {
   return new Promise((resolve, reject) => {
-    if (redirects > 8) return reject(new Error('重定向过多'));
+    if (redirects > 8) return reject(new Error('Quá nhiều lần chuyển hướng'));
     https
       .get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
@@ -51,7 +51,7 @@ function download(url, dest, redirects = 0) {
           got += c.length;
           if (total) {
             const pct = Math.floor((got / total) * 100);
-            if (pct >= lastPct + 10) { lastPct = pct; console.log(`  下载中 ${pct}%`); }
+            if (pct >= lastPct + 10) { lastPct = pct; console.log(`  Đang tải ${pct}%`); }
           }
         });
         res.pipe(ws);
@@ -66,33 +66,37 @@ function download(url, dest, redirects = 0) {
   const ffmpegExe = path.join(DEST, 'ffmpeg.exe');
   const ffprobeExe = path.join(DEST, 'ffprobe.exe');
 
-  // 许可证文本随源码入库，这里只做一次存在性校验（合规需要）
+  // Văn bản giấy phép được commit cùng mã nguồn, ở đây chỉ kiểm tra xem có tồn tại không (yêu cầu tuân thủ giấy phép)
   const requiredLicenses = ['COPYING.GPLv3', 'COPYING.GPLv2', 'COPYING.LGPLv2.1', 'LICENSE.md', 'FFMPEG-NOTICE.txt'];
   const missing = requiredLicenses.filter((f) => !fs.existsSync(path.join(DEST, f)));
   if (missing.length) {
-    console.warn('警告：build/ffmpeg/ 缺少以下许可文件，分发前请补回：');
+    console.warn('Cảnh báo: build/ffmpeg/ thiếu các file giấy phép sau, hãy bổ sung trước khi phân phối:');
     missing.forEach((f) => console.warn('  - ' + f));
   }
 
   if (exists(ffmpegExe) && exists(ffprobeExe)) {
-    console.log('ffmpeg 已就绪：' + DEST);
+    console.log('ffmpeg đã sẵn sàng: ' + DEST);
     return;
   }
 
   fs.mkdirSync(DEST, { recursive: true });
   fs.mkdirSync(path.dirname(ZIP), { recursive: true });
 
-  console.log('正在下载 ffmpeg essentials（约 88MB）…');
+  console.log('Đang tải ffmpeg essentials (khoảng 88MB)…');
   await download(URL, ZIP);
-  console.log('下载完成：' + (fs.statSync(ZIP).size / 1048576).toFixed(1) + 'MB');
+  console.log('Tải xong: ' + (fs.statSync(ZIP).size / 1048576).toFixed(1) + 'MB');
 
-  console.log('正在解压…');
+  console.log('Đang giải nén…');
   fs.rmSync(TMP, { recursive: true, force: true });
-  // 用 PowerShell 解压（Windows 自带，无需额外依赖）
-  execFileSync('powershell', [
-    '-NoProfile', '-Command',
-    `Expand-Archive -LiteralPath '${ZIP}' -DestinationPath '${TMP}' -Force`,
-  ], { stdio: 'inherit' });
+  // Trên Windows giải nén bằng PowerShell có sẵn; khi đóng gói chéo trên macOS/Linux thì dùng unzip của hệ thống
+  if (process.platform === 'win32') {
+    execFileSync('powershell', [
+      '-NoProfile', '-Command',
+      `Expand-Archive -LiteralPath '${ZIP}' -DestinationPath '${TMP}' -Force`,
+    ], { stdio: 'inherit' });
+  } else {
+    execFileSync('unzip', ['-q', '-o', ZIP, '-d', TMP], { stdio: 'inherit' });
+  }
 
   const find = (dir, name) => {
     let out = null;
@@ -106,7 +110,7 @@ function download(url, dest, redirects = 0) {
 
   const srcFf = find(TMP, 'ffmpeg.exe');
   const srcFp = find(TMP, 'ffprobe.exe');
-  if (!srcFf || !srcFp) throw new Error('压缩包里没找到 ffmpeg.exe / ffprobe.exe');
+  if (!srcFf || !srcFp) throw new Error('Không tìm thấy ffmpeg.exe / ffprobe.exe trong file nén');
 
   fs.copyFileSync(srcFf, ffmpegExe);
   fs.copyFileSync(srcFp, ffprobeExe);
@@ -114,11 +118,11 @@ function download(url, dest, redirects = 0) {
   fs.rmSync(TMP, { recursive: true, force: true });
   fs.rmSync(ZIP, { force: true });
 
-  console.log('完成：');
+  console.log('Hoàn tất:');
   console.log('  ' + ffmpegExe + '  ' + (fs.statSync(ffmpegExe).size / 1048576).toFixed(1) + 'MB');
   console.log('  ' + ffprobeExe + '  ' + (fs.statSync(ffprobeExe).size / 1048576).toFixed(1) + 'MB');
 })().catch((e) => {
-  console.error('失败：' + e.message);
-  console.error('可手动下载 ffmpeg essentials 并把 ffmpeg.exe / ffprobe.exe 放进 build/ffmpeg/');
+  console.error('Thất bại: ' + e.message);
+  console.error('Có thể tải thủ công ffmpeg essentials rồi đặt ffmpeg.exe / ffprobe.exe vào build/ffmpeg/');
   process.exit(1);
 });

@@ -1,5 +1,5 @@
-// 官网题材/标签（中文）-> 越南语显示名。只改显示，筛选仍用原值/slug。
-// ponytail: 静态词表，官网新增的标签会原样显示中文，见到再补
+// Thể loại/nhãn của web gốc (tiếng Trung) -> tên hiển thị tiếng Việt. Chỉ đổi phần hiển thị, bộ lọc vẫn dùng giá trị gốc/slug.
+// ponytail: bảng từ tĩnh, nhãn mới thêm trên web gốc sẽ hiện nguyên tiếng Trung, gặp thì bổ sung
 const VI = {
   'AI觉醒': 'AI thức tỉnh', '一见钟情': 'Yêu từ cái nhìn đầu tiên', '业界精英': 'Tinh anh trong ngành',
   '中式恐怖': 'Kinh dị kiểu Trung Hoa', '乡村': 'Nông thôn', '传奇': 'Truyền kỳ', '传承觉醒': 'Thức tỉnh truyền thừa',
@@ -53,7 +53,7 @@ const VI = {
   '预知未来': 'Tiên tri tương lai', '马甲文': 'Thân phận ẩn', '黑化归来': 'Hắc hóa trở về', '黑客': 'Hacker',
 };
 
-/** 中文标签/集标题 -> 越南语；未收录的原样返回 */
+/** Nhãn/tiêu đề tập tiếng Trung -> tiếng Việt; mục chưa có trong bảng thì trả về nguyên gốc */
 export const vi = (s) => {
   const t = String(s || '').trim();
   return VI[t] || t.replace(/^第\s*(\d+)\s*集$/, 'Tập $1');

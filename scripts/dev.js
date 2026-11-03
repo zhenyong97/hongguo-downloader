@@ -1,18 +1,18 @@
 /**
- * scripts/dev.js - 开发模式启动器
+ * scripts/dev.js - trình khởi chạy chế độ phát triển
  *
- * 启动前先检查端口是否被占用：
- *   - 端口空闲：直接使用
- *   - 端口被占用：自动改用下一个可用端口（并明确提示）
- * 然后启动 Vite 开发服务器，等待就绪后启动 Electron 窗口。
+ * Trước khi khởi chạy, kiểm tra cổng có bị chiếm không:
+ *   - Cổng trống: dùng luôn
+ *   - Cổng bị chiếm: tự động chuyển sang cổng trống kế tiếp (và thông báo rõ)
+ * Sau đó khởi chạy server phát triển Vite, đợi sẵn sàng rồi mở cửa sổ Electron.
  */
 const { spawn } = require('child_process');
 const net = require('net');
 const path = require('path');
 
-const PREFERRED_PORT = 5173; // 与 vite.config.js 保持一致
+const PREFERRED_PORT = 5173; // Giữ khớp với vite.config.js
 
-// 检查端口是否被占用（返回 true=占用）
+// Kiểm tra cổng có bị chiếm không (trả về true = bị chiếm)
 function checkPort(port) {
   return new Promise((resolve) => {
     const s = net.createConnection({ port, host: '127.0.0.1' });
@@ -21,14 +21,14 @@ function checkPort(port) {
   });
 }
 
-// 从 start 开始找下一个可用端口
+// Tìm cổng trống kế tiếp, bắt đầu từ start
 async function findFreePort(start) {
   let port = start;
   while (await checkPort(port)) port++;
   return port;
 }
 
-// 等待端口就绪（Vite 启动完成）
+// Đợi cổng sẵn sàng (Vite khởi chạy xong)
 function waitPortReady(port, timeoutMs = 30000) {
   const start = Date.now();
   return new Promise((resolve, reject) => {
@@ -39,7 +39,7 @@ function waitPortReady(port, timeoutMs = 30000) {
           resolve();
         } else if (Date.now() - start > timeoutMs) {
           clearInterval(timer);
-          reject(new Error('等待 Vite 启动超时'));
+          reject(new Error('Hết thời gian chờ Vite khởi chạy'));
         }
       });
     }, 300);
@@ -51,12 +51,12 @@ async function main() {
   const port = occupied ? await findFreePort(PREFERRED_PORT + 1) : PREFERRED_PORT;
 
   if (occupied) {
-    console.log(`\n[启动检查] 端口 ${PREFERRED_PORT} 已被占用，自动改用端口 ${port}\n`);
+    console.log(`\n[Kiểm tra khởi chạy] Cổng ${PREFERRED_PORT} đã bị chiếm, tự động chuyển sang cổng ${port}\n`);
   } else {
-    console.log(`\n[启动检查] 端口 ${PREFERRED_PORT} 空闲，正常启动\n`);
+    console.log(`\n[Kiểm tra khởi chạy] Cổng ${PREFERRED_PORT} đang trống, khởi chạy bình thường\n`);
   }
 
-  // 1. 启动 Vite 开发服务器（strictPort 保证用我们选定的端口）
+  // 1. Khởi chạy server phát triển Vite (strictPort đảm bảo dùng đúng cổng đã chọn)
   const vite = spawn('npx', ['vite', '--port', String(port), '--strictPort', '--host', '127.0.0.1'], {
     shell: true,
     stdio: 'inherit',
@@ -64,15 +64,15 @@ async function main() {
   });
 
   vite.on('error', (e) => {
-    console.error('[启动失败] 无法启动 Vite:', e.message);
+    console.error('[Khởi chạy thất bại] Không thể khởi chạy Vite:', e.message);
     process.exit(1);
   });
 
-  // 2. 等 Vite 就绪后启动 Electron
+  // 2. Đợi Vite sẵn sàng rồi khởi chạy Electron
   try {
     await waitPortReady(port);
   } catch (e) {
-    console.error('[启动失败]', e.message);
+    console.error('[Khởi chạy thất bại]', e.message);
     vite.kill();
     process.exit(1);
   }
@@ -95,6 +95,6 @@ async function main() {
 }
 
 main().catch((e) => {
-  console.error('[启动失败]', e);
+  console.error('[Khởi chạy thất bại]', e);
   process.exit(1);
 });

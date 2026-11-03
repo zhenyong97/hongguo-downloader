@@ -1,59 +1,59 @@
-# 第三方组件许可说明
+# Thông tin giấy phép thành phần bên thứ ba
 
-本软件（红果短剧下载器）使用了以下第三方组件。各组件的版权归其各自作者所有，
-本软件对这些组件的使用均遵循其原始许可证。
+Phần mềm này (Trình tải phim ngắn Hongguo) sử dụng các thành phần bên thứ ba sau. Bản quyền của từng thành phần thuộc về tác giả tương ứng;
+việc phần mềm này sử dụng các thành phần đó đều tuân theo giấy phép gốc của chúng.
 
 ---
 
-## 运行时依赖
+## Phụ thuộc lúc chạy
 
-| 组件 | 版本 | 许可证 | 项目地址 |
+| Thành phần | Phiên bản | Giấy phép | Địa chỉ dự án |
 |---|---|---|---|
 | Electron | 28.3.3 | MIT | https://github.com/electron/electron |
 | React | 18.3.1 | MIT | https://github.com/facebook/react |
 | React DOM | 18.3.1 | MIT | https://github.com/facebook/react |
 | axios | ^1.13.2 | MIT | https://github.com/axios/axios |
 
-Electron 打包产物中已包含 Chromium 与 Node.js 的许可声明：
+Sản phẩm đóng gói của Electron đã bao gồm thông báo giấy phép của Chromium và Node.js:
 
 - `LICENSE.electron.txt`
 - `LICENSES.chromium.html`
 
 ---
 
-## 内置可执行程序
+## Chương trình thực thi tích hợp
 
-### FFmpeg（GPLv3）
+### FFmpeg (GPLv3)
 
-| 项 | 说明 |
+| Mục | Mô tả |
 |---|---|
-| 文件 | `resources/bin/ffmpeg.exe`、`resources/bin/ffprobe.exe` |
-| 版本 | FFmpeg 7.1-essentials_build |
-| 来源 | https://www.gyan.dev/ffmpeg/builds/ |
-| 构建参数 | 含 `--enable-gpl --enable-version3 --enable-libx264 --enable-libx265` |
-| **许可证** | **GNU General Public License v3.0** |
-| 源码 | https://ffmpeg.org/download.html · https://github.com/FFmpeg/FFmpeg |
+| File | `resources/bin/ffmpeg.exe`, `resources/bin/ffprobe.exe` |
+| Phiên bản | FFmpeg 7.1-essentials_build |
+| Nguồn | https://www.gyan.dev/ffmpeg/builds/ |
+| Tham số build | Có `--enable-gpl --enable-version3 --enable-libx264 --enable-libx265` |
+| **Giấy phép** | **GNU General Public License v3.0** |
+| Mã nguồn | https://ffmpeg.org/download.html · https://github.com/FFmpeg/FFmpeg |
 
-用途：为「一键合并」提供分片拼接，为「兼容模式」提供格式转码
-（解决部分电脑无法硬件解码 HEVC 导致的「黑屏有声」）。
+Mục đích: nối các phân đoạn cho «Gộp một chạm», chuyển đổi định dạng cho «Chế độ tương thích»
+(khắc phục lỗi «màn hình đen nhưng có tiếng» trên một số máy không giải mã phần cứng được HEVC).
 
-随软件分发的许可证全文位于 `resources/bin/`：
+Toàn văn giấy phép phân phối kèm phần mềm nằm trong `resources/bin/`:
 
-- `COPYING.GPLv3` —— GPLv3 全文（本构建适用的主许可证）
-- `COPYING.GPLv2` —— GPLv2 全文
-- `COPYING.LGPLv2.1` —— LGPLv2.1 全文
-- `LICENSE.md` —— FFmpeg 官方许可证说明
-- `FFMPEG-NOTICE.txt` —— 本项目的补充说明与源码获取方式
+- `COPYING.GPLv3` —— toàn văn GPLv3 (giấy phép chính áp dụng cho bản build này)
+- `COPYING.GPLv2` —— toàn văn GPLv2
+- `COPYING.LGPLv2.1` —— toàn văn LGPLv2.1
+- `LICENSE.md` —— thông tin giấy phép chính thức của FFmpeg
+- `FFMPEG-NOTICE.txt` —— ghi chú bổ sung của dự án này và cách lấy mã nguồn
 
-FFmpeg 是独立的第三方程序，本软件仅通过命令行调用其公开接口，未修改其源码。
+FFmpeg là chương trình bên thứ ba độc lập; phần mềm này chỉ gọi giao diện công khai của nó qua dòng lệnh, không sửa đổi mã nguồn của nó.
 
 ---
 
-## 开发依赖
+## Phụ thuộc phát triển
 
-构建期使用以下工具（不随软件分发）：
+Các công cụ sau được dùng lúc build (không phân phối kèm phần mềm):
 
-| 组件 | 许可证 |
+| Thành phần | Giấy phép |
 |---|---|
 | Vite | MIT |
 | electron-builder | MIT |
@@ -63,7 +63,7 @@ FFmpeg 是独立的第三方程序，本软件仅通过命令行调用其公开�
 
 ---
 
-## 本软件自身
+## Bản thân phần mềm này
 
-本软件基于上游项目二次开发，整体以 **GNU General Public License v3.0** 发布，
-详见仓库根目录的 `LICENSE` 与 `NOTICE`。
+Phần mềm này được phát triển tiếp dựa trên dự án thượng nguồn, toàn bộ được phát hành theo **GNU General Public License v3.0**,
+chi tiết xem `LICENSE` và `NOTICE` ở thư mục gốc kho mã.

@@ -1,6 +1,6 @@
 /**
- * 验证 reelfren 数据源全链路：列表 -> 搜索 -> 分集 -> 播放直链 -> 直链能下到 MP4
- * 用法: node scripts/verify-reelfren.js
+ * Kiểm tra toàn bộ luồng nguồn dữ liệu reelfren: danh sách -> tìm kiếm -> danh sách tập -> link phát trực tiếp -> link tải được MP4
+ * Cách dùng: node scripts/verify-reelfren.js
  */
 const assert = require('assert');
 const axios = require('axios');
@@ -8,7 +8,7 @@ const reelfren = require('../src/native/reelfren');
 const hongguo = require('../src/native/hongguo');
 
 (async () => {
-  // 离线部分：ID / 链接解析
+  // Phần offline: phân tích ID / link
   assert.ok(reelfren.owns('rf-pinedrama-123') && !reelfren.owns('7645222653694856254'));
   assert.strictEqual(
     reelfren.seriesIdFromUrl('https://reelfren.net/drama/pinedrama/7643719580606632977-khac-tinh?lang=vi'),
@@ -33,7 +33,7 @@ const hongguo = require('../src/native/hongguo');
   assert.ok(play.url, 'không có link: ' + play.error);
   assert.strictEqual(play.spadeA, null);
 
-  // 用下载器实际用的 UA 取前 2KB，确认是 MP4（ftyp）
+  // Dùng đúng UA mà trình tải dùng để lấy 2KB đầu, xác nhận là MP4 (ftyp)
   const res = await axios.get(play.url, {
     headers: { 'User-Agent': hongguo.UA, Range: 'bytes=0-2047' },
     responseType: 'arraybuffer',

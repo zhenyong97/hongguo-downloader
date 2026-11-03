@@ -15,7 +15,7 @@ const PROXY_MODES = [
   { value: 'direct', label: 'Bắt buộc kết nối trực tiếp', desc: 'Bỏ qua mọi proxy, kết nối trực tiếp' },
 ];
 
-// 常见代理软件默认端口，方便一键填入
+// Cổng mặc định của các phần mềm proxy phổ biến, để điền nhanh một chạm
 const PORT_PRESETS = [
   { label: 'Clash / Mihomo', port: 7890 },
   { label: 'V2rayN', port: 10809 },
@@ -23,7 +23,7 @@ const PORT_PRESETS = [
   { label: 'Burp / Bắt gói tin', port: 8080 },
 ];
 
-/** 已保存设置 -> 当前生效的代理描述 */
+/** Cài đặt đã lưu -> mô tả proxy đang có hiệu lực */
 function describeProxy(settings) {
   if (!settings || settings.proxy_enabled !== true) {
     return { on: false, text: 'Chưa bật (mọi yêu cầu kết nối trực tiếp)' };
@@ -71,7 +71,7 @@ function SettingsPage() {
     }
   };
 
-  // ===== 代理弹窗 =====
+  // ===== Hộp thoại proxy =====
   const openProxyModal = () => {
     setProxyDraft({
       proxy_enabled: settings.proxy_enabled === true,

@@ -12,7 +12,7 @@
   --danger: #ef4444;
   --warning: #f59e0b;
 
-  /* 组件样式引用的设计 Token（浅色主题） */
+  /* Design token dùng trong style của component (giao diện sáng) */
   --bg-canvas: #f7f8fa;
   --bg-subtle: #ffffff;
   --bg-inset: #f0f1f3;
@@ -65,7 +65,7 @@ body {
   overflow: hidden;
 }
 
-/* 侧边栏 */
+/* Thanh bên */
 .sidebar {
   width: 190px;
   background: var(--sidebar-bg);
@@ -146,7 +146,7 @@ body {
   gap: 10px;
 }
 
-/* 主内容区包裹器 */
+/* Khung bao vùng nội dung chính */
 .main-wrapper {
   flex: 1;
   display: flex;
@@ -156,7 +156,7 @@ body {
   background: var(--bg);
 }
 
-/* 主内容区 */
+/* Vùng nội dung chính */
 .main-content {
   flex: 1;
   overflow-y: auto;
@@ -164,7 +164,7 @@ body {
 }
 
 
-/* ===== 通用按钮与输入控件 ===== */
+/* ===== Nút và ô nhập dùng chung ===== */
 .btn {
   display: inline-flex;
   align-items: center;

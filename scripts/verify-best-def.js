@@ -1,11 +1,11 @@
 /**
- * 验证 parseModelVideo 新逻辑：同一份 video_model 响应内，确认选中的是最高档
- * 用法: node scripts/verify-best-def.js [vid ...]
+ * Kiểm tra logic mới của parseModelVideo: trong cùng một phản hồi video_model, xác nhận đã chọn mức cao nhất
+ * Cách dùng: node scripts/verify-best-def.js [vid ...]
  */
 const path = require('path');
 const fs = require('fs');
 
-// 加载真实模块源码并额外导出内部函数 parseModelVideo
+// Nạp mã nguồn module thật và export thêm hàm nội bộ parseModelVideo
 const srcPath = path.join(__dirname, '..', 'src', 'native', 'hongguo.js');
 const src = fs.readFileSync(srcPath, 'utf8');
 const Module = require('module');
@@ -28,8 +28,8 @@ function defNumber(defStr) {
   for (const vid of vids) {
     try {
       const playInfo = await hongguo.fetchPlayUrlSingle(vid);
-      // fetchPlayUrlSingle 内部也走 parseModelVideo，但拿不到完整 video_model；
-      // 这里再取一次原始 model，用真实 parseModelVideo 选流并与全档位对比
+      // fetchPlayUrlSingle bên trong cũng dùng parseModelVideo, nhưng không lấy được video_model đầy đủ;
+      // ở đây lấy lại model gốc một lần nữa, dùng parseModelVideo thật để chọn luồng và so với tất cả các mức
       const axios = require('axios');
       const API = "https://api5-normal-sinfonlineb.fqnovel.com";
       const q = {
@@ -71,16 +71,16 @@ function defNumber(defStr) {
       const bestDef = defs.reduce((a, b) => (defNumber(b.def) > defNumber(a.def) ? b : a));
       const ok = url === bestDef.url;
       if (!ok) allOk = false;
-      console.log(`${ok ? '✅' : '❌'} vid=${vid} 档位=[${defs.map(d => d.def).join(', ')}] -> 选中 ${ok ? bestDef.def + ' ' + bestDef.size : '未知'} (codec=${codec})`);
+      console.log(`${ok ? '✅' : '❌'} vid=${vid} các mức=[${defs.map(d => d.def).join(', ')}] -> đã chọn ${ok ? bestDef.def + ' ' + bestDef.size : 'không rõ'} (codec=${codec})`);
       if (!ok) {
-        console.log('  期望URL:', bestDef.url.slice(0, 100));
-        console.log('  实际URL:', String(url || '').slice(0, 100));
+        console.log('  URL mong đợi:', bestDef.url.slice(0, 100));
+        console.log('  URL thực tế:', String(url || '').slice(0, 100));
       }
     } catch (e) {
       allOk = false;
-      console.log(`❌ vid=${vid} 失败: ${e.message}`);
+      console.log(`❌ vid=${vid} thất bại: ${e.message}`);
     }
   }
-  console.log(allOk ? '\n全部选中最高清晰度 ✅' : '\n存在未选中最高档的情况 ❌');
+  console.log(allOk ? '\nTất cả đều chọn độ nét cao nhất ✅' : '\nCó trường hợp không chọn mức cao nhất ❌');
   process.exit(allOk ? 0 : 1);
 })();

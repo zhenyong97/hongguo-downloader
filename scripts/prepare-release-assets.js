@@ -1,14 +1,14 @@
 /**
- * prepare-release-assets.js —— 为 GitHub Release 准备 ASCII 文件名的资产
+ * prepare-release-assets.js —— chuẩn bị asset có tên file ASCII cho GitHub Release
  *
- * 为什么需要：
- *   本地打包产物的文件名是中文（红果短剧下载器-1.0.0-win-x64.zip），
- *   但 GitHub 的 Release 资产接口会把文件名里的非 ASCII 字符直接过滤掉，
- *   变成 "-1.0.0-win-x64.zip"（gh CLI 与直连 API 都会这样）。
- *   所以上传前先把产物复制成 ASCII 文件名。
+ * Vì sao cần:
+ *   tên file sản phẩm đóng gói cục bộ có thể chứa ký tự không phải ASCII (lấy theo build.productName trong package.json),
+ *   nhưng API asset của GitHub Release sẽ lọc bỏ thẳng các ký tự không phải ASCII trong tên file,
+ *   làm tên file bị hỏng, ví dụ tên toàn chữ Hán thành "-1.0.0-win-x64.zip" (cả gh CLI lẫn gọi API trực tiếp đều vậy).
+ *   Vì vậy trước khi upload, chép sản phẩm sang tên file ASCII.
  *
- * 产物：dist/release/<ascii 文件名>
- * 用法：
+ * Đầu ra: dist/release/<tên file ascii>
+ * Cách dùng:
  *   node scripts/prepare-release-assets.js
  *   gh release create v1.0.0 --title "..." --notes-file notes.md dist/release/*
  */
@@ -22,12 +22,16 @@ const OUT = path.join(DIST, 'release');
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 const VERSION = pkg.version;
 const SLUG = pkg.name; // hongguo-downloader
+const BUILD = pkg.build || {};
+const PRODUCT = BUILD.productName || pkg.name;
+// Tên file do electron-builder sinh ra theo artifactName trong package.json
+const artifact = (tpl) => tpl.replace('${productName}', PRODUCT).replace('${version}', VERSION).replace('${ext}', 'exe');
 
-// 本地产物名（中文） -> Release 资产名（ASCII）
+// Tên file cục bộ (theo productName, có thể không phải ASCII) -> tên asset Release (ASCII)
 const MAP = [
-  { from: `红果短剧下载器-${VERSION}-win-x64.zip`, to: `${SLUG}-${VERSION}-win-x64.zip`, desc: '绿色版 zip（推荐）' },
-  { from: `红果短剧下载器-Setup-${VERSION}.exe`, to: `${SLUG}-${VERSION}-Setup.exe`, desc: 'NSIS 安装包' },
-  { from: `红果短剧下载器-${VERSION}-便携版.exe`, to: `${SLUG}-${VERSION}-portable.exe`, desc: '便携单文件' },
+  { from: `${PRODUCT}-${VERSION}-win-x64.zip`, to: `${SLUG}-${VERSION}-win-x64.zip`, desc: 'zip bản không cần cài đặt (khuyên dùng)' },
+  { from: artifact(BUILD.nsis.artifactName), to: `${SLUG}-${VERSION}-Setup.exe`, desc: 'Bộ cài NSIS' },
+  { from: artifact(BUILD.portable.artifactName), to: `${SLUG}-${VERSION}-portable.exe`, desc: 'Bản di động một file' },
 ];
 
 function findInDist(name) {
@@ -47,28 +51,28 @@ function main() {
     const src = findInDist(m.from);
     if (!src) { missing.push(m.from); continue; }
     const dst = path.join(OUT, m.to);
-    fs.copyFileSync(src, dst); // 复制而不是改名，保留 dist 里的原始产物
+    fs.copyFileSync(src, dst); // Sao chép chứ không đổi tên, giữ nguyên sản phẩm gốc trong dist
     done.push({ ...m, size: fs.statSync(dst).size });
   }
 
-  console.log('已准备 Release 资产 → ' + OUT);
+  console.log('Đã chuẩn bị asset Release → ' + OUT);
   for (const d of done) {
     console.log(`  ${d.to}`);
-    console.log(`      ${(d.size / 1048576).toFixed(1)} MB   （${d.desc}）`);
+    console.log(`      ${(d.size / 1048576).toFixed(1)} MB   (${d.desc})`);
   }
   if (missing.length) {
-    console.log('\n未找到以下本地产物，请先打包：');
+    console.log('\nKhông tìm thấy các sản phẩm cục bộ sau, hãy đóng gói trước:');
     missing.forEach((m) => console.log('  ' + m));
-    console.log('  可执行：npm run build && npm run build:zip && npm run build:portable');
+    console.log('  Có thể chạy: npm run build && npm run build:zip && npm run build:portable');
   }
 
-  console.log('\n下一步（示例）：');
-  console.log(`  gh release create v${VERSION} --title "红果短剧下载器 v${VERSION}" \\`);
+  console.log('\nBước tiếp theo (ví dụ):');
+  console.log(`  gh release create v${VERSION} --title "${PRODUCT} v${VERSION}" \\`);
   console.log(`    --notes-file release-notes.md dist/release/*`);
-  console.log('  或补传：gh release upload v' + VERSION + ' dist/release/* --clobber');
+  console.log('  Hoặc upload bổ sung: gh release upload v' + VERSION + ' dist/release/* --clobber');
 }
 
 try { main(); } catch (e) {
-  console.error('失败：' + e.message);
+  console.error('Thất bại: ' + e.message);
   process.exit(1);
 }
