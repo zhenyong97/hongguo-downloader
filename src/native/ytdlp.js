@@ -4,11 +4,11 @@
  * Không tự viết trình phân tích cho hai trang này: yt-dlp đã lo phần chống bot, chọn chất lượng cao nhất
  * và gộp luồng hình + tiếng riêng (DASH) bằng ffmpeg. Thứ yt-dlp tải về là MP4 hoàn chỉnh, không mã hóa.
  *   Bilibili: không cần đăng nhập vẫn tải được tới 1080p (đo thực tế 2026-11-03, yt-dlp 2026.10.26)
- *   Ixigua  : yt-dlp báo "Cookies (not necessarily logged in) are needed", nên cần chọn trình duyệt lấy cookie trong Cài đặt
+ *   Ixigua / Douyin: yt-dlp cần cookie trình duyệt (không cần đăng nhập), chọn trình duyệt trong Cài đặt
  *
  * ID nội bộ (dùng thẳng được làm tên file):
  *   series_id = yt-<site>-<id>      vid = yt-<site>-<id>-<số phần>
- *   site: bili (id là BV...) | ixigua (id toàn số). Video nhiều phần (P1, P2...) của Bilibili mỗi phần là một tập.
+ *   site: bili (id là BV...) | ixigua | douyin (id toàn số). Video nhiều phần (P1, P2...) của Bilibili mỗi phần là một tập.
  */
 const fs = require('fs');
 const path = require('path');
@@ -19,6 +19,8 @@ const PREFIX = 'yt-';
 const SITES = {
   bili: { re: /bilibili\.com\/(?:[a-z]{2}\/)?video\/(BV[0-9A-Za-z]{10})/i, url: (id) => `https://www.bilibili.com/video/${id}/` },
   ixigua: { re: /ixigua\.com\/(?:video\/)?(\d{8,})/i, url: (id) => `https://www.ixigua.com/${id}` },
+  // Link chia sẻ trong app (v.douyin.com) chuyển về iesdouyin.com/share/video/<id>
+  douyin: { re: /(?:douyin\.com\/video|iesdouyin\.com\/share\/video)\/(\d{8,})/i, url: (id) => `https://www.douyin.com/video/${id}` },
 };
 
 const owns = (id) => String(id || '').startsWith(PREFIX);
@@ -29,7 +31,7 @@ function parseId(id) {
   return { site: m[1], id: m[2], part: m[3] ? Number(m[3]) : 0 };
 }
 
-const SHORT_RE = /https?:\/\/(?:b23\.tv|v\.ixigua\.com)\/[^\s]+/i;
+const SHORT_RE = /https?:\/\/(?:b23\.tv|v\.ixigua\.com|v\.douyin\.com)\/[^\s]+/i;
 
 /** Link rút gọn chỉ là một bước chuyển hướng 302: đọc Location, không tải trang đích */
 async function expandShortUrl(input) {
@@ -39,15 +41,15 @@ async function expandShortUrl(input) {
   return res.headers.location || input;
 }
 
-/** Dán link: Bilibili (kể cả bản /en/, link rút gọn b23.tv) hoặc Ixigua */
+/** Dán link: Bilibili (kể cả bản /en/, link rút gọn b23.tv), Ixigua hoặc Douyin (kể cả v.douyin.com) */
 async function seriesIdFromUrl(input) {
   const url = await expandShortUrl(input);
   for (const [site, s] of Object.entries(SITES)) {
     const m = String(url || '').match(s.re);
     if (m) return `${PREFIX}${site}-${m[1]}`;
   }
-  // v.ixigua.com giờ chuyển sang Douyin (Ixigua đã gộp vào Douyin), nên báo rõ thay vì rơi xuống nhánh Hongguo
-  if (url !== input && /douyin\.com/i.test(url)) throw new Error('Link Ixigua này đã chuyển sang Douyin, chưa hỗ trợ tải Douyin');
+  // Link rút gọn trỏ tới thứ không phải video (ví dụ v.ixigua.com giờ chuyển sang trang người dùng Douyin): báo rõ thay vì rơi xuống nhánh Hongguo
+  if (url !== input) throw new Error('Link rút gọn không trỏ tới một video: ' + String(url).split('?')[0]);
   return null;
 }
 
@@ -93,7 +95,13 @@ function run(args, { onLine, onSpawn } = {}) {
     child.on('close', (code, signal) => {
       if (code === 0) return resolve(out);
       if (signal) return reject(new Error('yt-dlp đã bị dừng'));
-      const msg = (err.match(/ERROR: (.*)/) || [])[1] || err.trim().split('\n').pop() || 'mã thoát ' + code;
+      let msg = (err.match(/ERROR: (.*)/) || [])[1] || err.trim().split('\n').pop() || 'mã thoát ' + code;
+      msg = msg.replace(/;?\s*please report this issue.*$/i, '');
+      if (/cookies/i.test(msg)) {
+        msg += options.cookiesBrowser
+          ? ` — mở video này trên ${options.cookiesBrowser} (giải captcha nếu có, nên đăng nhập) rồi thử lại ngay`
+          : ' — chọn trình duyệt lấy cookie trong Cài đặt';
+      }
       reject(new Error('yt-dlp: ' + msg));
     });
   });

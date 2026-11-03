@@ -210,7 +210,7 @@ function SettingsPage() {
         </div>
 
         <div className="settings-group">
-          <label className="settings-label">Cookie cho Bilibili / Ixigua</label>
+          <label className="settings-label">Cookie cho Bilibili / Douyin / Ixigua</label>
           <select
             className="input-field select-field"
             value={settings.ytdlp_cookies_browser || ''}
@@ -222,7 +222,7 @@ function SettingsPage() {
             <option value="chrome">Google Chrome</option>
           </select>
           <p className="settings-hint">
-            Ixigua bắt buộc có cookie (không cần đăng nhập): mở ixigua.com một lần trên trình duyệt đã chọn rồi tải lại.
+            Douyin và Ixigua bắt buộc có cookie (không cần đăng nhập): mở douyin.com một lần trên trình duyệt đã chọn rồi tải lại.
             Đăng nhập Bilibili trên trình duyệt đó sẽ mở được chất lượng cao hơn. Chrome/Edge cần đóng hẳn trình duyệt khi tải; Firefox ổn định nhất.
           </p>
         </div>

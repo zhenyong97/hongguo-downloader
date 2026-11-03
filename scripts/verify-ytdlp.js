@@ -16,6 +16,8 @@ const URL = process.argv[2] || 'https://www.bilibili.com/en/video/BV1GrxW6XEw7/?
   assert.ok(ytdlp.owns('yt-bili-BV1GrxW6XEw7') && !ytdlp.owns('rf-pinedrama-1') && !ytdlp.owns('7645222653694856254'));
   assert.strictEqual(await ytdlp.seriesIdFromUrl('https://www.bilibili.com/en/video/BV1GrxW6XEw7/?x=1'), 'yt-bili-BV1GrxW6XEw7');
   assert.strictEqual(await ytdlp.seriesIdFromUrl('https://www.ixigua.com/6996881461559165471?logTag=1'), 'yt-ixigua-6996881461559165471');
+  assert.strictEqual(await ytdlp.seriesIdFromUrl('https://www.douyin.com/video/6961737553342991651?modal_id=1'), 'yt-douyin-6961737553342991651');
+  assert.strictEqual(await ytdlp.seriesIdFromUrl('https://www.iesdouyin.com/share/video/6961737553342991651/?x=1'), 'yt-douyin-6961737553342991651');
   assert.strictEqual(await ytdlp.seriesIdFromUrl('https://novelquickapp.com/s/WGPClz6sw10/'), null);
   // Link rút gọn: cần mạng
   assert.strictEqual(await ytdlp.seriesIdFromUrl('xem nè https://b23.tv/BV1GrxW6XEw7'), 'yt-bili-BV1GrxW6XEw7');

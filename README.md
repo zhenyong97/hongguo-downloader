@@ -22,7 +22,7 @@ Công cụ desktop Windows dành cho **phim ngắn Hongguo (Hồng Quả — kê
 **engine giải mã luồng CENC-AES-CTR thuần (native)**: có thể duyệt/tìm kiếm phim, tải hàng loạt theo tập đã chọn và tự động giải mã thành
 MP4 không watermark; kết hợp trình phát tích hợp, xem trực tuyến và gộp một chạm, tạo thành vòng khép kín «khám phá → tải → xem → dọn dẹp».
 
-Ngoài Hongguo, ứng dụng còn có nguồn **PineDrama** (qua API reelfren) và **Bilibili / Ixigua** (dán link, tải qua [yt-dlp](https://github.com/yt-dlp/yt-dlp)).
+Ngoài Hongguo, ứng dụng còn có nguồn **PineDrama** (qua API reelfren) và **Bilibili / Douyin / Ixigua** (dán link, tải qua [yt-dlp](https://github.com/yt-dlp/yt-dlp)).
 
 > **Nguồn gốc và tuyên bố sửa đổi**: Kho mã này là **phiên bản đã sửa đổi** của
 > [327044572/hongguo-downloader](https://github.com/327044572/hongguo-downloader) (sửa đổi từ tháng 9/2026),
@@ -104,7 +104,7 @@ lưu xong là có hiệu lực ngay, không cần khởi động lại.
 - Việc dò chỉ dựa vào `series_id` trong link, không phụ thuộc tên class giao diện của trang, nên khó bị hỏng khi trang đổi giao diện
 - Khi thất bại có thể bật «Hiện cửa sổ trình duyệt» để xử lý thủ công
 - Nguồn thứ hai **PineDrama** được lấy qua API reelfren (`src/native/reelfren.js`)
-- **Bilibili / Ixigua**: dán link `bilibili.com/video/BV…` hoặc `ixigua.com/<id>` vào ô phân tích; video nhiều phần (P1, P2…) mỗi phần là một tập. Ixigua cần chọn trình duyệt lấy cookie trong Cài đặt (`src/native/ytdlp.js`)
+- **Bilibili / Douyin / Ixigua**: dán link `bilibili.com/video/BV…`, `b23.tv/…`, `douyin.com/video/<id>`, `v.douyin.com/…` hoặc `ixigua.com/<id>` vào ô phân tích; video nhiều phần (P1, P2…) mỗi phần là một tập. Douyin/Ixigua cần chọn trình duyệt lấy cookie trong Cài đặt (`src/native/ytdlp.js`)
 
 ### 2. 🎯 Chọn tập và tải xuống
 

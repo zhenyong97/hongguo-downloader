@@ -147,7 +147,7 @@ function getDefaultSettings() {
     // Tự gộp thành một tệp sau khi mọi tác vụ của một phim tải xong; compatible=chuyển mã sang H.264
     auto_merge: false,
     auto_merge_compatible: false,
-    // Trình duyệt để yt-dlp đọc cookie (Ixigua bắt buộc có cookie): ''=không dùng, firefox/edge/chrome...
+    // Trình duyệt để yt-dlp đọc cookie (Douyin/Ixigua bắt buộc có cookie): ''=không dùng, firefox/edge/chrome...
     ytdlp_cookies_browser: '',
     // ===== Proxy mạng =====
     // proxy_enabled: có bật proxy không (khi tắt thì bỏ qua proxy hệ thống, kết nối trực tiếp)
