@@ -171,6 +171,12 @@ function getDefaultSettings() {
  *   mode='system'  theo hệ thống/biến môi trường (url có thể là proxy lấy từ biến môi trường, dùng để hiển thị)
  *   mode='custom'  chỉ định thủ công
  */
+// Proxy từ biến môi trường lúc khởi động. Phải chụp lại trước, vì applyProxyToEnv ghi đè process.env:
+// đọc lại process.env thì chuyển từ «Tùy chỉnh» về «Theo hệ thống» vẫn dính proxy tùy chỉnh cũ
+const ENV_PROXY =
+  process.env.HTTPS_PROXY || process.env.https_proxy ||
+  process.env.HTTP_PROXY || process.env.http_proxy || null;
+
 function resolveProxyConfig(settings) {
   const s = settings || {};
   if (s.proxy_enabled !== true) {
@@ -202,11 +208,24 @@ function resolveProxyConfig(settings) {
     }
     return { mode: 'custom', url: `${protocol}://${auth}${host}${port ? ':' + port : ''}` };
   }
-  // system: lấy biến môi trường làm chuẩn
-  const envUrl =
-    process.env.HTTPS_PROXY || process.env.https_proxy ||
-    process.env.HTTP_PROXY || process.env.http_proxy || null;
-  return { mode: 'system', url: envUrl };
+  // system: lấy biến môi trường làm chuẩn; không có thì applyProxySettings hỏi proxy hệ thống qua Chromium
+  return { mode: 'system', url: ENV_PROXY };
+}
+
+/**
+ * Proxy hệ thống của Windows/macOS (Clash, V2rayN… bật «đặt proxy hệ thống»): Node (axios) và yt-dlp
+ * không tự đọc được, chỉ Chromium đọc được, nên hỏi Chromium rồi ghi sang biến môi trường.
+ * resolveProxy trả về dạng "PROXY h:p; DIRECT", "HTTPS h:p", "SOCKS5 h:p" hoặc "DIRECT".
+ */
+async function systemProxyUrl() {
+  try {
+    const rule = await session.defaultSession.resolveProxy('https://www.bilibili.com');
+    const m = rule.match(/^(PROXY|HTTPS)\s+([^;\s]+)/);
+    // ponytail: proxy hệ thống kiểu SOCKS chưa hỗ trợ (axios không đọc được socks qua biến môi trường), cần thì thêm socks-proxy-agent
+    return m ? `${m[1] === 'HTTPS' ? 'https' : 'http'}://${m[2]}` : null;
+  } catch (_) {
+    return null;
+  }
 }
 
 /**
@@ -241,8 +260,9 @@ async function applyProxyToSession(resolved) {
 /** Điểm vào chung: gọi khi cài đặt thay đổi hoặc lúc khởi động */
 async function applyProxySettings(settings) {
   const resolved = resolveProxyConfig(settings);
-  applyProxyToEnv(resolved);
   await applyProxyToSession(resolved);
+  if (resolved.mode === 'system' && !resolved.url) resolved.url = await systemProxyUrl();
+  applyProxyToEnv(resolved);
   console.log(`[Proxy] mode=${resolved.mode} url=${resolved.url || '(kết nối trực tiếp)'}`);
   return resolved;
 }
