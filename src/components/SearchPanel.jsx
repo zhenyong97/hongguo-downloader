@@ -1,23 +1,44 @@
 import React, { useState } from 'react';
 import './HongguoDownload.css';
-import { Search, Film, RefreshCw, ExternalLink } from './icons';
+import { Search, Film, RefreshCw, ExternalLink, Download } from './icons';
 
 /**
  * SearchPanel —— 通过内嵌浏览器嗅探 hongguoduanju.com 的搜索结果
  * 拿到 series_id 后交给父组件走既有的「拉全集 + 选集下载」流程。
  */
-function SearchPanel({ onSelectSeries, onSwitchToInput }) {
+function SearchPanel({ onSelectSeries, onSwitchToInput, onNavigate }) {
   const [keyword, setKeyword] = useState('');
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState(null); // null=未搜索, []=无结果
   const [error, setError] = useState('');
   const [pageTitle, setPageTitle] = useState('');
   const [pickingId, setPickingId] = useState('');
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  // 一键下载全部搜索结果的所有分集
+  const downloadAll = async () => {
+    if (!results || !results.length) return;
+    if (!window.confirm(`Tải toàn bộ tập của ${results.length} phim trong kết quả tìm kiếm?`)) return;
+    setBulkBusy(true);
+    setError('');
+    try {
+      const res = await window.electronAPI.downloadSeriesList(results.map((r) => r.series_id));
+      if (res && res.success && res.seriesCount > 0) {
+        if (onNavigate) onNavigate('manager');
+      } else {
+        setError((res && res.error) || 'Không lấy được danh sách tập của phim nào');
+      }
+    } catch (e) {
+      setError('Lỗi khi gửi: ' + e.message);
+    } finally {
+      setBulkBusy(false);
+    }
+  };
 
   const doSearch = async () => {
     const kw = keyword.trim();
     if (!kw) {
-      setError('请输入剧名关键词');
+      setError('Vui lòng nhập từ khóa tên phim');
       return;
     }
     setLoading(true);
@@ -27,14 +48,14 @@ function SearchPanel({ onSelectSeries, onSwitchToInput }) {
     try {
       const res = await window.electronAPI.searchSeries(kw);
       if (!res || !res.success) {
-        setError((res && res.error) || '搜索失败，请重试');
+        setError((res && res.error) || 'Tìm kiếm thất bại, vui lòng thử lại');
         setResults([]);
       } else {
         setResults(res.results || []);
         if (!res.results || res.results.length === 0) setPageTitle(res.pageTitle || '');
       }
     } catch (e) {
-      setError('搜索异常: ' + e.message);
+      setError('Lỗi khi tìm kiếm: ' + e.message);
       setResults([]);
     } finally {
       setLoading(false);
@@ -50,10 +71,10 @@ function SearchPanel({ onSelectSeries, onSwitchToInput }) {
       if (res && res.success && res.data) {
         onSelectSeries(res.data);
       } else {
-        setError((res && res.error) || '拉取分集失败');
+        setError((res && res.error) || 'Lấy danh sách tập thất bại');
       }
     } catch (e) {
-      setError('拉取分集异常: ' + e.message);
+      setError('Lỗi khi lấy danh sách tập: ' + e.message);
     } finally {
       setPickingId('');
     }
@@ -61,21 +82,21 @@ function SearchPanel({ onSelectSeries, onSwitchToInput }) {
 
   const showBrowser = async () => {
     await window.electronAPI.searchWindowShow(true);
-    setError('已打开搜索窗口，可手动操作；关闭该窗口后回到本页继续。');
+    setError('Đã mở cửa sổ tìm kiếm, bạn có thể thao tác thủ công; đóng cửa sổ đó rồi quay lại trang này để tiếp tục.');
   };
 
   return (
     <div className="hongguo-card">
       <div className="card-header-title">
         <Search size={18} />
-        <span>搜索短剧</span>
+        <span>Tìm kiếm phim ngắn</span>
       </div>
 
       <div className="input-group">
         <input
           type="text"
           className="input-field"
-          placeholder="输入剧名，例如：一村人养一个神"
+          placeholder="Nhập tên phim bằng tiếng Trung"
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && doSearch()}
@@ -84,18 +105,18 @@ function SearchPanel({ onSelectSeries, onSwitchToInput }) {
           {loading ? (
             <>
               <RefreshCw size={16} className="spin" />
-              <span>搜索中...</span>
+              <span>Đang tìm kiếm...</span>
             </>
           ) : (
             <>
               <Search size={16} />
-              <span>搜索</span>
+              <span>Tìm kiếm</span>
             </>
           )}
         </button>
       </div>
       <p className="settings-hint" style={{ marginTop: 8 }}>
-        搜索词会用内置浏览器打开 hongguoduanju.com 取回结果，选中后可一键拉取全集下载。
+        Từ khóa sẽ được tìm trên hongguoduanju.com bằng trình duyệt tích hợp; chọn một kết quả để lấy toàn bộ tập và tải xuống ngay.
       </p>
 
       {error && <div className="alert alert-error">{error}</div>}
@@ -103,21 +124,21 @@ function SearchPanel({ onSelectSeries, onSwitchToInput }) {
       {loading && (
         <div className="search-loading">
           <RefreshCw size={18} className="spin" />
-          <span>正在嗅探搜索结果，首次可能需要几秒…</span>
+          <span>Đang lấy kết quả tìm kiếm, lần đầu có thể mất vài giây…</span>
         </div>
       )}
 
       {results && results.length === 0 && !loading && (
         <div className="search-empty">
-          <p>没有找到相关短剧{pageTitle ? `（页面标题：${pageTitle}）` : ''}</p>
+          <p>Không tìm thấy phim ngắn phù hợp{pageTitle ? ` (tiêu đề trang: ${pageTitle})` : ''}</p>
           <div className="search-empty-actions">
             <button className="btn btn-outline" onClick={showBrowser}>
               <ExternalLink size={15} />
-              显示浏览器窗口
+              Hiện cửa sổ trình duyệt
             </button>
             {onSwitchToInput && (
               <button className="btn btn-outline" onClick={onSwitchToInput}>
-                改用链接 / ID 下载
+                Tải bằng liên kết / ID
               </button>
             )}
           </div>
@@ -126,14 +147,20 @@ function SearchPanel({ onSelectSeries, onSwitchToInput }) {
 
       {results && results.length > 0 && (
         <>
-          <div className="search-count">找到 {results.length} 部相关短剧</div>
+          <div className="search-count">
+            Tìm thấy {results.length} phim ngắn phù hợp
+            <button className="btn btn-primary btn-sm" style={{ marginLeft: "auto" }} onClick={downloadAll} disabled={bulkBusy}>
+              {bulkBusy ? <RefreshCw size={14} className="spin" /> : <Download size={14} />}
+              {bulkBusy ? `Đang thêm ${results.length} phim…` : 'Tải tất cả'}
+            </button>
+          </div>
           <div className="search-grid">
             {results.map((item) => (
               <div
                 key={item.series_id}
                 className={`search-card ${pickingId === item.series_id ? 'picking' : ''}`}
                 onClick={() => pickingId === '' && pick(item)}
-                title={`点击查看并下载：${item.series_title}`}
+                title={`Bấm để xem và tải xuống: ${item.series_title}`}
               >
                 <div className="search-cover">
                   {item.cover ? (
@@ -149,7 +176,7 @@ function SearchPanel({ onSelectSeries, onSwitchToInput }) {
                   <div className="search-card-sub">
                     {pickingId === item.series_id ? (
                       <>
-                        <RefreshCw size={13} className="spin" /> 正在拉取分集…
+                        <RefreshCw size={13} className="spin" /> Đang lấy danh sách tập…
                       </>
                     ) : (
                       <>series_id {item.series_id}</>

@@ -7,11 +7,11 @@ import Player from './components/Player';
 import Browse from './components/Browse';
 
 const MENU = [
-  { id: 'browse', label: '浏览', icon: Sparkles },
-  { id: 'download', label: '红果下载', icon: Film },
-  { id: 'player', label: '播放', icon: Play },
-  { id: 'manager', label: '下载管理', icon: Download },
-  { id: 'settings', label: '设置', icon: Settings },
+  { id: 'browse', label: 'Khám phá', icon: Sparkles },
+  { id: 'download', label: 'Tải Hongguo', icon: Film },
+  { id: 'player', label: 'Trình phát', icon: Play },
+  { id: 'manager', label: 'Quản lý tải xuống', icon: Download },
+  { id: 'settings', label: 'Cài đặt', icon: Settings },
 ];
 
 export default function App() {
@@ -60,8 +60,8 @@ export default function App() {
             <Film size={18} />
           </div>
           <div>
-            <div className="brand-text">{appInfo ? appInfo.brand : '红果短剧下载器'}</div>
-            <div className="brand-sub">红果短剧下载器 v{appInfo ? appInfo.version : ''}</div>
+            <div className="brand-text">{appInfo ? appInfo.brand : 'Trình tải phim ngắn Hongguo'}</div>
+            <div className="brand-sub">Trình tải phim ngắn Hongguo v{appInfo ? appInfo.version : ''}</div>
           </div>
         </div>
 
@@ -82,7 +82,7 @@ export default function App() {
         </div>
 
         <div className="sidebar-footer">
-          <div className="footer-note">AES-128 CENC 原生解密 · 无水印</div>
+          <div className="footer-note">Giải mã AES-128 CENC gốc · Không watermark</div>
         </div>
       </div>
 

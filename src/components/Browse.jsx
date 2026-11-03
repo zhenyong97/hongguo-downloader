@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import './Browse.css';
 import { Film, RefreshCw, ExternalLink, Download, Play, Check, X, Sparkles } from './icons';
+import { vi } from '../zhLabels';
 
 /**
  * Browse —— 分类淘剧
@@ -29,6 +30,16 @@ function Browse({ onNavigate }) {
   const [rangeInput, setRangeInput] = useState('');
   const [selectedIdx, setSelectedIdx] = useState(new Set());
   const [submitting, setSubmitting] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  // ===== 高级筛选：多页扫描 + 条件过滤 =====
+  const [scan, setScan] = useState(null); // null=只看当前页；{ pool, done, total, running }
+  const [scanPages, setScanPages] = useState(5);
+  const scanStop = useRef(false);
+  const [keyword, setKeyword] = useState('');
+  const [tagRule, setTagRule] = useState({}); // tag -> 'inc' | 'exc'
+  const [minEp, setMinEp] = useState('');
+  const [maxEp, setMaxEp] = useState('');
 
   // 已下载统计（按 series_id -> 已下载集数）
   const [downloadedMap, setDownloadedMap] = useState({});
@@ -72,18 +83,18 @@ function Browse({ onNavigate }) {
       try {
         const res = await window.electronAPI.browseList({ category: cat, genre: gen, page: pg });
         if (!res || !res.success) {
-          setError((res && res.error) || '加载失败，请重试');
+          setError((res && res.error) || 'Tải thất bại, vui lòng thử lại');
           setResults([]);
         } else {
           setResults(res.results || []);
           setMeta({ total: res.total || 0, totalPages: res.totalPages || 0, genres: res.genres || [] });
           setPageTitle(res.pageTitle || '');
           if (!res.results || res.results.length === 0) {
-            setError('这一页没有取到内容，可试试换分类或「显示浏览器窗口」手动操作');
+            setError('Không lấy được nội dung trang này, hãy thử đổi danh mục hoặc dùng “Hiện cửa sổ trình duyệt” để thao tác thủ công');
           }
         }
       } catch (e) {
-        setError('加载异常: ' + e.message);
+        setError('Lỗi khi tải: ' + e.message);
         setResults([]);
       } finally {
         setLoading(false);
@@ -107,6 +118,7 @@ function Browse({ onNavigate }) {
     setGenre('');
     setPage(1);
     setResults([]);
+    resetScan();
   };
 
   const switchGenre = (slug) => {
@@ -114,7 +126,72 @@ function Browse({ onNavigate }) {
     setGenre(slug);
     setPage(1);
     setResults([]);
+    resetScan();
   };
+
+  const resetScan = () => {
+    scanStop.current = true;
+    setScan(null);
+    setTagRule({});
+  };
+
+  // 逐页抓取当前分类/题材，最多 scanPages 页，按 series_id 去重
+  const startScan = async () => {
+    scanStop.current = false;
+    const want = Math.max(1, parseInt(scanPages, 10) || 1);
+    const pool = new Map();
+    let total = want;
+    setScan({ pool: [], done: 0, total, running: true });
+    for (let p = 1; p <= total && !scanStop.current; p++) {
+      try {
+        const res = await window.electronAPI.browseList({ category, genre, page: p });
+        if (res && res.success) {
+          if (res.totalPages) total = Math.min(want, res.totalPages);
+          for (const r of res.results || []) pool.set(String(r.series_id), r);
+        }
+      } catch (_) {}
+      if (scanStop.current) return;
+      setScan({ pool: [...pool.values()], done: p, total, running: p < total });
+    }
+  };
+
+  const cycleTag = (t) => {
+    setTagRule((prev) => {
+      const next = { ...prev };
+      if (!next[t]) next[t] = 'inc';
+      else if (next[t] === 'inc') next[t] = 'exc';
+      else delete next[t];
+      return next;
+    });
+  };
+
+  const source = scan ? scan.pool : results;
+
+  // 来源里出现过的标签，按出现次数排序
+  const tagOptions = useMemo(() => {
+    const cnt = {};
+    for (const r of source) for (const t of r.tags || []) cnt[t] = (cnt[t] || 0) + 1;
+    return Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a]);
+  }, [source]);
+
+  const shown = useMemo(() => {
+    const kw = keyword.trim().toLowerCase();
+    const inc = Object.keys(tagRule).filter((t) => tagRule[t] === 'inc');
+    const exc = Object.keys(tagRule).filter((t) => tagRule[t] === 'exc');
+    const lo = parseInt(minEp, 10);
+    const hi = parseInt(maxEp, 10);
+    return source.filter((r) => {
+      const tags = r.tags || [];
+      if (kw && !String(r.series_title || '').toLowerCase().includes(kw)) return false;
+      if (inc.some((t) => !tags.includes(t))) return false;
+      if (exc.some((t) => tags.includes(t))) return false;
+      if (!Number.isNaN(lo) && (r.episode_count || 0) < lo) return false;
+      if (!Number.isNaN(hi) && (r.episode_count || 0) > hi) return false;
+      return true;
+    });
+  }, [source, keyword, tagRule, minEp, maxEp]);
+
+  const hasFilter = keyword.trim() || Object.keys(tagRule).length || minEp !== '' || maxEp !== '';
 
   const gotoPage = (p) => {
     const max = meta.totalPages || 1;
@@ -133,7 +210,7 @@ function Browse({ onNavigate }) {
     try {
       const res = await window.electronAPI.searchResolve(item.series_id);
       if (!res || !res.success) {
-        showToast((res && res.error) || '拉取分集失败', 'error');
+        showToast((res && res.error) || 'Lấy danh sách tập thất bại', 'error');
         return;
       }
       const data = res.data;
@@ -153,7 +230,7 @@ function Browse({ onNavigate }) {
       // 默认全选未下载的
       setSelectedIdx(new Set(episodes.filter((e) => e.status !== 'completed').map((e) => e.vid_index)));
     } catch (e) {
-      showToast('打开失败: ' + e.message, 'error');
+      showToast('Mở thất bại: ' + e.message, 'error');
     } finally {
       setDetailLoading(false);
     }
@@ -205,14 +282,14 @@ function Browse({ onNavigate }) {
         episodes: eps,
       });
       if (res && res.success) {
-        showToast(`已加入下载队列：${res.count} 集`);
+        showToast(`Đã thêm vào hàng đợi tải xuống: ${res.count} tập`);
         setDetail(null);
         if (onNavigate) onNavigate('manager');
       } else {
-        showToast((res && res.error) || '提交下载失败', 'error');
+        showToast((res && res.error) || 'Gửi tải xuống thất bại', 'error');
       }
     } catch (e) {
-      showToast('提交异常: ' + e.message, 'error');
+      showToast('Lỗi khi gửi: ' + e.message, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -223,16 +300,37 @@ function Browse({ onNavigate }) {
     if (!detail) return;
     const first = detail.episodes.find((e) => e.status === 'completed');
     if (!first) {
-      showToast('这一集还没下载，先点「下载选中」再播放', 'error');
+      showToast('Tập này chưa được tải, hãy bấm “Tải xuống mục đã chọn” trước rồi phát', 'error');
       return;
     }
     await window.electronAPI.playSeries({ seriesId: detail.series_id, vidIndex: first.vid_index });
     setDetail(null);
   };
 
+  // 一键下载本页全部剧的所有分集
+  const downloadAllOnPage = async () => {
+    if (!shown.length) return;
+    if (!window.confirm(`Tải toàn bộ tập của ${shown.length} phim đang hiển thị?`)) return;
+    setBulkBusy(true);
+    try {
+      const res = await window.electronAPI.downloadSeriesList(shown.map((r) => r.series_id));
+      if (res && res.success) {
+        const fail = res.failed && res.failed.length ? `, ${res.failed.length} phim lỗi` : '';
+        showToast(`Đã thêm ${res.episodeCount} tập của ${res.seriesCount} phim vào hàng đợi${fail}`, fail ? 'error' : 'success');
+        if (onNavigate) onNavigate('manager');
+      } else {
+        showToast((res && res.error) || 'Gửi tải xuống thất bại', 'error');
+      }
+    } catch (e) {
+      showToast('Lỗi khi gửi: ' + e.message, 'error');
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   const showBrowser = async () => {
     await window.electronAPI.searchWindowShow(true);
-    showToast('已打开浏览器窗口，可手动操作；关闭后回到本页继续');
+    showToast('Đã mở cửa sổ trình duyệt, bạn có thể thao tác thủ công; đóng cửa sổ rồi quay lại trang này để tiếp tục');
   };
 
   const totalPages = meta.totalPages || 0;
@@ -254,20 +352,24 @@ function Browse({ onNavigate }) {
       <div className="browse-header">
         <div className="browse-title">
           <Sparkles size={22} />
-          <h2>浏览</h2>
+          <h2>Khám phá</h2>
         </div>
         <div className="browse-header-right">
-          {meta.total > 0 && <span className="browse-stat">共 {meta.total} 部</span>}
+          {meta.total > 0 && <span className="browse-stat">Tổng cộng {meta.total} phim</span>}
+          <button className="btn btn-primary" onClick={downloadAllOnPage} disabled={bulkBusy || loading || !shown.length}>
+            {bulkBusy ? <RefreshCw size={15} className="spin" /> : <Download size={15} />}
+            {bulkBusy ? `Đang thêm ${shown.length} phim…` : `Tải tất cả ${shown.length} phim đang hiển thị`}
+          </button>
           <button className="btn btn-outline" onClick={showBrowser}>
             <ExternalLink size={15} />
-            显示浏览器窗口
+            Hiện cửa sổ trình duyệt
           </button>
         </div>
       </div>
 
       {/* 分类 tab */}
       <div className="browse-cats">
-        {(categories.length ? categories : [{ slug: 'real-drama', label: '真人剧' }]).map((c) => (
+        {(categories.length ? categories : [{ slug: 'real-drama', label: 'Phim người đóng' }]).map((c) => (
           <button
             key={c.slug}
             className={`browse-cat ${category === c.slug ? 'active' : ''}`}
@@ -285,7 +387,7 @@ function Browse({ onNavigate }) {
             className={`genre-chip ${genre === '' ? 'active' : ''}`}
             onClick={() => switchGenre('')}
           >
-            全部
+            Tất cả
           </button>
           {meta.genres.map((g) => (
             <button
@@ -293,22 +395,73 @@ function Browse({ onNavigate }) {
               className={`genre-chip ${genre === g.slug ? 'active' : ''}`}
               onClick={() => switchGenre(g.slug)}
             >
-              {g.label}
+              {vi(g.label)}
             </button>
           ))}
         </div>
       )}
+
+      {/* 高级筛选 */}
+      <div className="browse-filter">
+        <div className="browse-filter-row">
+          <input
+            className="input-field"
+            placeholder="Tên phim chứa (tiếng Trung)…"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+          />
+          <span className="browse-filter-label">Số tập</span>
+          <input className="input-field browse-filter-num" type="number" min="0" placeholder="từ" value={minEp} onChange={(e) => setMinEp(e.target.value)} />
+          <input className="input-field browse-filter-num" type="number" min="0" placeholder="đến" value={maxEp} onChange={(e) => setMaxEp(e.target.value)} />
+          <span className="browse-filter-label">Quét</span>
+          <input className="input-field browse-filter-num" type="number" min="1" max="200" value={scanPages} onChange={(e) => setScanPages(e.target.value)} />
+          <span className="browse-filter-label">trang</span>
+          {scan && scan.running ? (
+            <button className="btn btn-outline" onClick={() => { scanStop.current = true; setScan((s) => s && { ...s, running: false }); }}>
+              Dừng ({scan.done}/{scan.total})
+            </button>
+          ) : (
+            <button className="btn btn-outline" onClick={startScan} disabled={loading}>
+              <RefreshCw size={15} /> Quét nhiều trang
+            </button>
+          )}
+          {(scan || hasFilter) && (
+            <button className="btn-chip" onClick={() => { resetScan(); setKeyword(''); setMinEp(''); setMaxEp(''); }}>
+              Xóa bộ lọc
+            </button>
+          )}
+        </div>
+        {tagOptions.length > 0 && (
+          <div className="browse-filter-tags">
+            {tagOptions.map((t) => (
+              <button
+                key={t}
+                className={`genre-chip ${tagRule[t] === 'inc' ? 'tag-inc' : tagRule[t] === 'exc' ? 'tag-exc' : ''}`}
+                onClick={() => cycleTag(t)}
+                title="Bấm: bắt buộc có → loại trừ → bỏ chọn"
+              >
+                {tagRule[t] === 'inc' ? '+ ' : tagRule[t] === 'exc' ? '− ' : ''}{vi(t)}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="browse-filter-sum">
+          {scan
+            ? `Đã quét ${scan.done}/${scan.total} trang · ${scan.pool.length} phim · khớp bộ lọc: ${shown.length}`
+            : `Trang hiện tại: ${results.length} phim · khớp bộ lọc: ${shown.length}`}
+        </div>
+      </div>
 
       {error && <div className="alert alert-error">{error}</div>}
 
       {loading ? (
         <div className="browse-loading">
           <RefreshCw size={18} className="spin" />
-          <span>正在加载分类内容…</span>
+          <span>Đang tải nội dung danh mục…</span>
         </div>
       ) : (
         <div className="browse-grid">
-          {results.map((item) => {
+          {shown.map((item) => {
             const dl = downloadedMap[String(item.series_id)];
             return (
               <div
@@ -324,7 +477,7 @@ function Browse({ onNavigate }) {
                     <div className="cover-placeholder"><Film size={22} /></div>
                   )}
                   {item.episode_count > 0 && (
-                    <span className="browse-ep-badge">全{item.episode_count}集</span>
+                    <span className="browse-ep-badge">{item.episode_count} tập</span>
                   )}
                   {dl && dl.completed > 0 && (
                     <span className="browse-dl-badge">
@@ -333,7 +486,7 @@ function Browse({ onNavigate }) {
                   )}
                   <div className="browse-hover">
                     <span className="browse-hover-play">
-                      <Play size={16} /> {dl && dl.completed > 0 ? '播放' : '查看'}
+                      <Play size={16} /> {dl && dl.completed > 0 ? 'Phát' : 'Xem'}
                     </span>
                   </div>
                 </div>
@@ -341,7 +494,7 @@ function Browse({ onNavigate }) {
                 {item.tags && item.tags.length > 0 && (
                   <div className="browse-card-tags">
                     {item.tags.map((t) => (
-                      <span key={t} className="browse-tag">{t}</span>
+                      <span key={t} className="browse-tag">{vi(t)}</span>
                     ))}
                   </div>
                 )}
@@ -352,7 +505,7 @@ function Browse({ onNavigate }) {
       )}
 
       {/* 分页 */}
-      {totalPages > 1 && (
+      {totalPages > 1 && !scan && (
         <div className="browse-pager">
           <button className="pager-item" disabled={page <= 1} onClick={() => gotoPage(page - 1)}>‹</button>
           {pageNumbers.map((n, i) => (
@@ -377,9 +530,9 @@ function Browse({ onNavigate }) {
             <div className="browse-drawer-head">
               <div className="browse-drawer-title">
                 <Film size={18} />
-                <span>{detail ? `《${detail.series_title}》` : '加载中…'}</span>
+                <span>{detail ? `“${detail.series_title}”` : 'Đang tải…'}</span>
               </div>
-              <button className="icon-btn" onClick={() => setDetail(null)} title="关闭">
+              <button className="icon-btn" onClick={() => setDetail(null)} title="Đóng">
                 <X size={16} />
               </button>
             </div>
@@ -387,7 +540,7 @@ function Browse({ onNavigate }) {
             {detailLoading && (
               <div className="browse-loading">
                 <RefreshCw size={18} className="spin" />
-                <span>正在拉取全集…</span>
+                <span>Đang lấy toàn bộ tập…</span>
               </div>
             )}
 
@@ -398,26 +551,26 @@ function Browse({ onNavigate }) {
                     {detail.cover && <img src={detail.cover} alt="" className="browse-drawer-cover" />}
                     <div className="browse-drawer-meta">
                       <div className="browse-drawer-count">
-                        共 {detail.total} 集 · 已下载 <b>{detail.completedCount}</b> 集
+                        Tổng cộng {detail.total} tập · Đã tải <b>{detail.completedCount}</b> tập
                       </div>
-                      <div className="browse-drawer-sub">选中 {selectedIdx.size} 集待下载</div>
+                      <div className="browse-drawer-sub">Đã chọn {selectedIdx.size} tập chờ tải xuống</div>
                       <div className="browse-range-row">
                         <input
                           type="text"
                           className="input-field"
-                          placeholder="区间，如 1-50 或 1,3,5"
+                          placeholder="Khoảng, VD: 1-50 hoặc 1,3,5"
                           value={rangeInput}
                           onChange={(e) => setRangeInput(e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && applyRange(rangeInput)}
                         />
-                        <button className="btn btn-outline btn-sm" onClick={() => applyRange(rangeInput)}>应用</button>
+                        <button className="btn btn-outline btn-sm" onClick={() => applyRange(rangeInput)}>Áp dụng</button>
                       </div>
                       <div className="preset-row mt8">
-                        <button className="btn-chip" onClick={() => applyRange(`1-${Math.min(10, detail.total)}`)}>前10集</button>
-                        <button className="btn-chip" onClick={() => applyRange(`1-${Math.min(30, detail.total)}`)}>前30集</button>
-                        <button className="btn-chip" onClick={() => applyRange(`${Math.max(1, detail.total - 29)}-${detail.total}`)}>后30集</button>
-                        <button className="btn-chip" onClick={() => setSelectedIdx(new Set(detail.episodes.map((e) => e.vid_index)))}>全选</button>
-                        <button className="btn-chip" onClick={() => setSelectedIdx(new Set())}>清空</button>
+                        <button className="btn-chip" onClick={() => applyRange(`1-${Math.min(10, detail.total)}`)}>10 tập đầu</button>
+                        <button className="btn-chip" onClick={() => applyRange(`1-${Math.min(30, detail.total)}`)}>30 tập đầu</button>
+                        <button className="btn-chip" onClick={() => applyRange(`${Math.max(1, detail.total - 29)}-${detail.total}`)}>30 tập cuối</button>
+                        <button className="btn-chip" onClick={() => setSelectedIdx(new Set(detail.episodes.map((e) => e.vid_index)))}>Chọn tất cả</button>
+                        <button className="btn-chip" onClick={() => setSelectedIdx(new Set())}>Bỏ chọn</button>
                       </div>
                     </div>
                   </div>
@@ -428,7 +581,7 @@ function Browse({ onNavigate }) {
                         key={ep.vid_index}
                         className={`ep-chip ep-${ep.status} ${selectedIdx.has(ep.vid_index) ? 'ep-picked' : ''}`}
                         onClick={() => toggleIdx(ep.vid_index)}
-                        title={ep.title || `第 ${ep.vid_index} 集`}
+                        title={vi(ep.title) || `Tập ${ep.vid_index}`}
                       >
                         <span className="ep-num">{ep.vid_index}</span>
                         {ep.status === 'completed' && <Check size={11} className="ep-badge" />}
@@ -441,7 +594,7 @@ function Browse({ onNavigate }) {
                 <div className="browse-drawer-foot">
                   <button className="btn btn-outline" onClick={playNow}>
                     <Play size={15} />
-                    立即播放
+                    Phát ngay
                   </button>
                   <div className="browse-foot-right">
                     <button
@@ -450,7 +603,7 @@ function Browse({ onNavigate }) {
                       onClick={downloadSelected}
                     >
                       <Download size={15} />
-                      下载选中 ({selectedIdx.size})
+                      Tải xuống mục đã chọn ({selectedIdx.size})
                     </button>
                   </div>
                 </div>

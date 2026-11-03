@@ -3,11 +3,11 @@ import './DownloadManager.css';
 import { Download, Trash2, RefreshCw, X, Film, Square, Folder, Zap, CheckSquare, Play, Pause, Layers } from './icons';
 
 const STATUS_TEXT = {
-  pending: '等待中',
-  downloading: '下载中',
-  completed: '已完成',
-  failed: '失败',
-  stopped: '已停止',
+  pending: 'Đang chờ',
+  downloading: 'Đang tải',
+  completed: 'Hoàn thành',
+  failed: 'Thất bại',
+  stopped: 'Đã dừng',
 };
 
 const STATUS_ORDER = {
@@ -126,11 +126,11 @@ function DownloadManager({ onNavigate }) {
       }),
       window.electronAPI.onMergeCompleted((data) => {
         loadMergeTasks();
-        showToast('合并完成：' + (data.path ? data.path.split('\\').pop() : ''));
+        showToast('Gộp xong: ' + (data.path ? data.path.split('\\').pop() : ''));
       }),
       window.electronAPI.onMergeFailed((data) => {
         loadMergeTasks();
-        showToast('合并失败：' + (data.error || '未知错误'), 'error');
+        showToast('Gộp thất bại: ' + (data.error || 'Lỗi không xác định'), 'error');
       }),
     ];
     listenersRef.current = cleanups;
@@ -202,8 +202,8 @@ function DownloadManager({ onNavigate }) {
         await refresh();
         if (res && res.success) {
           showToast(deleteFiles
-            ? `已删除 ${res.count} 个任务，释放 ${fmtSize(res.freed)}`
-            : `已删除 ${res.count} 个任务记录（本地文件已保留）`);
+            ? `Đã xóa ${res.count} tác vụ, giải phóng ${fmtSize(res.freed)}`
+            : `Đã xóa ${res.count} bản ghi tác vụ (giữ lại tệp cục bộ)`);
         }
       },
     });
@@ -211,7 +211,7 @@ function DownloadManager({ onNavigate }) {
 
   const deleteSelected = async () => {
     if (selected.size === 0) return;
-    askDelete(tasks.filter((t) => selected.has(t.id)), '删除选中任务');
+    askDelete(tasks.filter((t) => selected.has(t.id)), 'Xóa các tác vụ đã chọn');
   };
   const retrySelected = async () => {
     if (selected.size === 0) return;
@@ -219,16 +219,16 @@ function DownloadManager({ onNavigate }) {
     setSelected(new Set());
     await refresh();
     if (res && res.success) {
-      showToast(res.count > 0 ? `已重新加入队列：${res.count} 项` : '选中项中没有可重试的任务');
+      showToast(res.count > 0 ? `Đã đưa lại vào hàng đợi: ${res.count} mục` : 'Không có tác vụ nào có thể thử lại trong các mục đã chọn');
     } else {
-      showToast((res && res.error) || '重试失败', 'error');
+      showToast((res && res.error) || 'Thử lại thất bại', 'error');
     }
   };
 
   // 一键合并选中的短剧
   const doMerge = async (compatible) => {
     if (!mergeSeriesId) {
-      showToast('请先选择要合并的短剧', 'error');
+      showToast('Vui lòng chọn phim ngắn cần gộp trước', 'error');
       return;
     }
     setMergeAsk(false);
@@ -236,18 +236,18 @@ function DownloadManager({ onNavigate }) {
     try {
       const res = await window.electronAPI.mergeSeries(mergeSeriesId, '', { compatible });
       if (!res || !res.success) {
-        showToast((res && res.error) || '合并失败', 'error');
+        showToast((res && res.error) || 'Gộp thất bại', 'error');
         return;
       }
       await loadMergeTasks();
       const sizeGb = (res.totalBytes / 1073741824).toFixed(2);
       const mins = Math.round(res.totalDuration / 60);
       showToast(compatible
-        ? `开始兼容格式合并 ${res.count} 集（H.264，耗时较长）`
-        : `开始合并 ${res.count} 集（约 ${sizeGb} GB / ${mins} 分钟）`);
+        ? `Bắt đầu gộp tương thích ${res.count} tập (H.264, mất khá nhiều thời gian)`
+        : `Bắt đầu gộp ${res.count} tập (khoảng ${sizeGb} GB / ${mins} phút)`);
       if (res.codecWarning) showToast(res.codecWarning, 'error');
     } catch (e) {
-      showToast('合并异常: ' + e.message, 'error');
+      showToast('Lỗi khi gộp: ' + e.message, 'error');
     } finally {
       setMerging(false);
     }
@@ -256,7 +256,7 @@ function DownloadManager({ onNavigate }) {
   const cancelMerge = async (id) => {
     await window.electronAPI.cancelMerge(id);
     await loadMergeTasks();
-    showToast('已取消合并');
+    showToast('Đã hủy gộp');
   };
 
   const openMergedFile = async (path) => {
@@ -269,7 +269,7 @@ function DownloadManager({ onNavigate }) {
     const res = await window.electronAPI.pauseAll();
     await refresh();
     await loadQueue();
-    showToast(res && res.success ? `已暂停 ${res.count} 个任务` : '暂停失败', res && res.success ? 'success' : 'error');
+    showToast(res && res.success ? `Đã tạm dừng ${res.count} tác vụ` : 'Tạm dừng thất bại', res && res.success ? 'success' : 'error');
   };
 
   // 一键启动：把所有已停止/失败/等待中的任务重新排队开跑
@@ -277,7 +277,7 @@ function DownloadManager({ onNavigate }) {
     const res = await window.electronAPI.resumeAll();
     await refresh();
     await loadQueue();
-    showToast(res && res.success ? `已启动 ${res.count} 个任务` : '启动失败', res && res.success ? 'success' : 'error');
+    showToast(res && res.success ? `Đã bắt đầu ${res.count} tác vụ` : 'Bắt đầu thất bại', res && res.success ? 'success' : 'error');
   };
 
   // 一键重试全部失败/已停止的任务
@@ -287,9 +287,9 @@ function DownloadManager({ onNavigate }) {
     const res = await window.electronAPI.retryTasks(ids);
     await refresh();
     if (res && res.success) {
-      showToast(`已重新加入队列：${res.count} 项`);
+      showToast(`Đã đưa lại vào hàng đợi: ${res.count} mục`);
     } else {
-      showToast((res && res.error) || '重试失败', 'error');
+      showToast((res && res.error) || 'Thử lại thất bại', 'error');
     }
   };
 
@@ -297,17 +297,17 @@ function DownloadManager({ onNavigate }) {
   const selectAllFailed = () => {
     const ids = tasks.filter((t) => t.status === 'failed' || t.status === 'stopped').map((t) => t.id);
     if (ids.length === 0) {
-      showToast('没有失败或已停止的任务');
+      showToast('Không có tác vụ thất bại hoặc đã dừng');
       return;
     }
     setSelected(new Set(ids));
-    showToast(`已选中 ${ids.length} 项，可点「重试选中」重新下载`);
+    showToast(`Đã chọn ${ids.length} mục, bấm “Thử lại mục đã chọn” để tải lại`);
   };
 
   const clearCompleted = async () => {
     const done = tasks.filter((t) => t.status === 'completed');
     if (done.length === 0) return;
-    askDelete(done, '清空已完成任务');
+    askDelete(done, 'Xóa các tác vụ đã hoàn thành');
   };
 
   const sortedTasks = useMemo(() => sortTasks(tasks), [tasks]);
@@ -341,12 +341,12 @@ function DownloadManager({ onNavigate }) {
       <div className="dm-header">
         <div className="dm-title">
           <Download size={22} />
-          <h2>下载管理</h2>
+          <h2>Quản lý tải xuống</h2>
         </div>
         <div className="dm-stats">
-          <span className="stat stat-active">进行中 {activeCount}</span>
-          <span className="stat stat-done">已完成 {completedCount}</span>
-          <span className="stat stat-fail">失败/停止 {failedCount}</span>
+          <span className="stat stat-active">Đang chạy {activeCount}</span>
+          <span className="stat stat-done">Hoàn thành {completedCount}</span>
+          <span className="stat stat-fail">Thất bại/Đã dừng {failedCount}</span>
         </div>
       </div>
 
@@ -355,52 +355,52 @@ function DownloadManager({ onNavigate }) {
           className="btn btn-primary"
           onClick={resumeAll}
           disabled={queue.active > 0 || pausableCount === 0}
-          title="把等待中 / 已停止 / 失败的任务全部排队开跑"
+          title="Đưa tất cả tác vụ đang chờ / đã dừng / thất bại vào hàng đợi để chạy"
         >
           <Play size={15} />
-          一键启动
+          Bắt đầu tất cả
         </button>
         <button
           className="btn btn-danger-solid"
           onClick={pauseAll}
           disabled={pausableCount === 0}
-          title="暂停全部：取消正在下载的并清空等待队列"
+          title="Tạm dừng tất cả: hủy các tác vụ đang tải và xóa hàng đợi"
         >
           <Pause size={15} />
-          一键暂停
+          Tạm dừng tất cả
         </button>
         <button
           className="btn btn-primary"
           onClick={retryAllFailed}
           disabled={failedCount === 0}
-          title="把所有失败/已停止的任务一次性重新加入下载队列"
+          title="Đưa tất cả tác vụ thất bại/đã dừng trở lại hàng đợi tải xuống"
         >
           <Zap size={15} />
-          {failedCount > 0 ? `一键重试全部失败 (${failedCount})` : '一键重试全部失败'}
+          {failedCount > 0 ? `Thử lại tất cả mục thất bại (${failedCount})` : 'Thử lại tất cả mục thất bại'}
         </button>
         <button
           className="btn btn-outline"
           onClick={selectAllFailed}
           disabled={failedCount === 0}
-          title="一键勾选所有失败/已停止的任务"
+          title="Chọn tất cả tác vụ thất bại/đã dừng"
         >
           <CheckSquare size={15} />
-          {failedCount > 0 ? `选中失败项 (${failedCount})` : '选中失败项'}
+          {failedCount > 0 ? `Chọn mục thất bại (${failedCount})` : 'Chọn mục thất bại'}
         </button>
         <button className="btn btn-outline" onClick={retrySelected} disabled={retryableSelectedCount === 0}>
           <RefreshCw size={15} />
-          重试选中 ({retryableSelectedCount})
+          Thử lại mục đã chọn ({retryableSelectedCount})
         </button>
         <button className="btn btn-outline" onClick={deleteSelected} disabled={selected.size === 0}>
           <Trash2 size={15} />
-          删除选中
+          Xóa mục đã chọn
         </button>
         <button className="btn btn-outline" onClick={clearCompleted} disabled={completedCount === 0}>
           <X size={15} />
-          清空已完成
+          Xóa mục đã hoàn thành
         </button>
         <button className="btn btn-outline" onClick={clearSelection} disabled={selected.size === 0}>
-          取消选择
+          Bỏ chọn
         </button>
         <button
           className="btn btn-outline"
@@ -408,13 +408,13 @@ function DownloadManager({ onNavigate }) {
             const r = await window.electronAPI.rescanDownloads();
             await refresh();
             showToast(r && r.success
-              ? (r.count > 0 ? `已从磁盘补回 ${r.count} 条下载记录` : '没有发现未登记的文件')
-              : '扫描失败');
+              ? (r.count > 0 ? `Đã khôi phục ${r.count} bản ghi tải xuống từ ổ đĩa` : 'Không tìm thấy tệp nào chưa được ghi nhận')
+              : 'Quét thất bại');
           }}
-          title="扫描下载目录，把磁盘上已有但列表里没有的文件补登记回来"
+          title="Quét thư mục tải xuống, ghi nhận lại các tệp có trên ổ đĩa nhưng chưa có trong danh sách"
         >
           <RefreshCw size={15} />
-          扫描目录补登记
+          Quét thư mục để ghi nhận
         </button>
         {seriesList.length > 0 && (
           <div className="merge-inline">
@@ -422,7 +422,7 @@ function DownloadManager({ onNavigate }) {
               className="input-field merge-select"
               value={mergeSeriesId}
               onChange={(e) => setMergeSeriesId(e.target.value)}
-              title="选择要合并的短剧"
+              title="Chọn phim ngắn cần gộp"
             >
               {seriesList.map((s) => (
                 <option key={s.series_id} value={String(s.series_id)}>
@@ -430,16 +430,16 @@ function DownloadManager({ onNavigate }) {
                 </option>
               ))}
             </select>
-            <button className="btn btn-outline" onClick={() => setMergeAsk(true)} disabled={merging} title="把该剧已下载的分集合并成单个 mp4">
+            <button className="btn btn-outline" onClick={() => setMergeAsk(true)} disabled={merging} title="Gộp các tập đã tải của phim này thành một tệp mp4">
               <Layers size={15} />
-              {merging ? '合并中...' : '一键合并本剧'}
+              {merging ? 'Đang gộp...' : 'Gộp phim này'}
             </button>
           </div>
         )}
         {onNavigate && (
           <button className="btn btn-primary dm-toolbar-end" onClick={() => onNavigate('download')}>
             <Film size={15} />
-            去下载
+            Đi tải xuống
           </button>
         )}
       </div>
@@ -452,18 +452,18 @@ function DownloadManager({ onNavigate }) {
               <Layers size={16} />
               <div className="merge-body">
                 <div className="merge-title">
-                  合并《{m.seriesTitle}》· {m.done || 0}/{m.total} 集
+                  Gộp “{m.seriesTitle}” · {m.done || 0}/{m.total} tập
                 </div>
                 <div className="merge-sub">
-                  {m.status === 'running' && <>正在合并… {m.progress || 0}%</>}
+                  {m.status === 'running' && <>Đang gộp… {m.progress || 0}%</>}
                   {m.status === 'completed' && (
                     <>
-                      已完成 · {m.outputName}
+                      Hoàn thành · {m.outputName}
                       {m.outputBytes ? ` · ${(m.outputBytes / 1073741824).toFixed(2)} GB` : ''}
                     </>
                   )}
-                  {m.status === 'failed' && <>失败：{m.error}</>}
-                  {m.status === 'stopped' && <>已取消</>}
+                  {m.status === 'failed' && <>Thất bại: {m.error}</>}
+                  {m.status === 'stopped' && <>Đã hủy</>}
                 </div>
                 {(m.status === 'running') && (
                   <div className="dm-progress">
@@ -476,19 +476,19 @@ function DownloadManager({ onNavigate }) {
               </div>
               <div className="merge-actions">
                 {m.status === 'running' && (
-                  <button className="icon-btn" title="取消合并" onClick={() => cancelMerge(m.id)}>
+                  <button className="icon-btn" title="Hủy gộp" onClick={() => cancelMerge(m.id)}>
                     <X size={16} />
                   </button>
                 )}
                 {m.status === 'completed' && (
-                  <button className="icon-btn" title="打开所在文件夹" onClick={() => openMergedFile(m.output)}>
+                  <button className="icon-btn" title="Mở thư mục chứa tệp" onClick={() => openMergedFile(m.output)}>
                     <Folder size={16} />
                   </button>
                 )}
                 {m.status !== 'running' && (
                   <button
                     className="icon-btn icon-btn-danger"
-                    title="移除记录"
+                    title="Xóa bản ghi"
                     onClick={async () => {
                       await window.electronAPI.deleteMergeTask(m.id);
                       loadMergeTasks();
@@ -507,27 +507,27 @@ function DownloadManager({ onNavigate }) {
         <div className="dm-queue-bar">
           <span className="dm-queue-running">
             <span className="dm-queue-pulse" />
-            正在并发下载 <b>{queue.active}</b> / {queue.maxConcurrent}
-            {queue.queued > 0 ? <> · 队列等待 <b>{queue.queued}</b></> : null}
+            Đang tải đồng thời <b>{queue.active}</b> / {queue.maxConcurrent}
+            {queue.queued > 0 ? <> · Đang chờ trong hàng đợi <b>{queue.queued}</b></> : null}
           </span>
           <span className="dm-queue-hint">
-            并发数可在「设置 → 最大并发下载数」调整
+            Có thể chỉnh số lượng tải đồng thời tại “Cài đặt → Số lượt tải đồng thời tối đa”
           </span>
         </div>
       )}
 
       {retryableSelectedCount > 0 && (
         <div className="dm-hint">
-          已选中 <b>{retryableSelectedCount}</b> 个失败项，点
-          <b>「重试选中」</b> 即会重新下载（无需重新解析）。
+          Đã chọn <b>{retryableSelectedCount}</b> mục thất bại, bấm
+          <b>“Thử lại mục đã chọn”</b> để tải lại (không cần phân tích lại).
         </div>
       )}
 
       {sortedTasks.length === 0 ? (
         <div className="dm-empty">
           <Download size={40} />
-          <p>暂无下载任务</p>
-          <p className="dm-empty-sub">前往「红果下载」解析短剧并提交下载</p>
+          <p>Chưa có tác vụ tải xuống</p>
+          <p className="dm-empty-sub">Hãy vào “Tải Hongguo” để phân tích phim ngắn và gửi tải xuống</p>
         </div>
       ) : (
         <div className="dm-list">
@@ -567,23 +567,23 @@ function DownloadManager({ onNavigate }) {
                 </div>
                 <div className="dm-task-actions" onClick={(e) => e.stopPropagation()}>
                   {canStop && (
-                    <button className="icon-btn" title="停止" onClick={() => { window.electronAPI.stopDownload(task.id); refresh(); }}>
+                    <button className="icon-btn" title="Dừng" onClick={() => { window.electronAPI.stopDownload(task.id); refresh(); }}>
                       <Square size={16} />
                     </button>
                   )}
                   {canRetry && (
-                    <button className="icon-btn" title="重试" onClick={() => { window.electronAPI.retryTask(task.id); }}>
+                    <button className="icon-btn" title="Thử lại" onClick={() => { window.electronAPI.retryTask(task.id); }}>
                       <RefreshCw size={16} />
                     </button>
                   )}
-                  <button className="icon-btn" title="打开文件夹" onClick={() => window.electronAPI.openFolder(task.id)}>
+                  <button className="icon-btn" title="Mở thư mục" onClick={() => window.electronAPI.openFolder(task.id)}>
                     <Folder size={16} />
                   </button>
                   <button
                     className="icon-btn icon-btn-danger"
-                    title="删除任务（可选是否同时删除本地文件）"
+                    title="Xóa tác vụ (có thể chọn xóa luôn tệp cục bộ)"
                     onClick={() => {
-                      askDelete([task], `删除《${task.hongguoInfo && task.hongguoInfo.series_title ? task.hongguoInfo.series_title : ''}》第 ${task.hongguoInfo ? task.hongguoInfo.vid_index : ''} 集任务`);
+                      askDelete([task], `Xóa tác vụ “${task.hongguoInfo && task.hongguoInfo.series_title ? task.hongguoInfo.series_title : ''}” Tập ${task.hongguoInfo ? task.hongguoInfo.vid_index : ''}`);
                     }}
                   >
                     <Trash2 size={16} />
@@ -607,20 +607,20 @@ function DownloadManager({ onNavigate }) {
           <div className="player-confirm" onClick={(e) => e.stopPropagation()}>
             <div className="player-confirm-title" style={{ color: 'var(--accent)' }}>
               <Layers size={17} />
-              合并导出全集
+              Gộp và xuất toàn bộ phim
             </div>
             <div className="player-confirm-msg">
-              <p>把该剧已下载的分集合并为一个 mp4。</p>
-              <p><b>快速合并</b>：原画质直接拼接，秒级完成，但格式仍是 HEVC —— 在部分电脑上可能黑屏有声。</p>
-              <p><b>兼容合并</b>：转码为 H.264，任何电脑/播放器都能播，但速度慢（约每分钟视频需数秒）。</p>
+              <p>Gộp các tập đã tải của phim này thành một tệp mp4.</p>
+              <p><b>Gộp nhanh</b>: nối trực tiếp giữ nguyên chất lượng gốc, xong trong vài giây, nhưng định dạng vẫn là HEVC — trên một số máy tính có thể bị màn hình đen nhưng có tiếng.</p>
+              <p><b>Gộp tương thích</b>: chuyển mã sang H.264, phát được trên mọi máy tính/trình phát, nhưng chậm (mỗi phút video mất khoảng vài giây).</p>
             </div>
             <div className="player-confirm-foot">
-              <button className="btn btn-outline" onClick={() => setMergeAsk(false)}>取消</button>
+              <button className="btn btn-outline" onClick={() => setMergeAsk(false)}>Hủy</button>
               <button className="btn btn-outline" onClick={() => doMerge(true)} disabled={merging}>
-                兼容合并（H.264）
+                Gộp tương thích (H.264)
               </button>
               <button className="btn btn-primary" onClick={() => doMerge(false)} disabled={merging}>
-                快速合并
+                Gộp nhanh
               </button>
             </div>
           </div>
@@ -636,8 +636,8 @@ function DownloadManager({ onNavigate }) {
               {confirmAsk.title}
             </div>
             <div className="player-confirm-msg">
-              <p>共 {confirmAsk.count} 个任务，其中 {confirmAsk.withFile} 个已下载完成
-                {confirmAsk.estBytes > 0 ? `（约 ${fmtSize(confirmAsk.estBytes)}）` : ''}。</p>
+              <p>Tổng cộng {confirmAsk.count} tác vụ, trong đó {confirmAsk.withFile} tác vụ đã tải xong
+                {confirmAsk.estBytes > 0 ? ` (khoảng ${fmtSize(confirmAsk.estBytes)})` : ''}.</p>
               <label className="dm-confirm-check">
                 <input
                   type="checkbox"
@@ -645,16 +645,16 @@ function DownloadManager({ onNavigate }) {
                   onChange={(e) => setConfirmAsk({ ...confirmAsk, _del: e.target.checked })}
                 />
                 <span>
-                  同时删除本地文件
-                  {confirmAsk.estBytes > 0 ? `（释放约 ${fmtSize(confirmAsk.estBytes)}）` : ''}
+                  Xóa luôn tệp cục bộ
+                  {confirmAsk.estBytes > 0 ? ` (giải phóng khoảng ${fmtSize(confirmAsk.estBytes)})` : ''}
                 </span>
               </label>
               <p className="dm-confirm-hint">
-                不勾选则只移除任务记录，磁盘上的视频文件会保留（可在文件管理器里自行管理）。
+                Nếu không chọn, chỉ xóa bản ghi tác vụ, tệp video trên ổ đĩa vẫn được giữ lại (bạn có thể tự quản lý trong trình quản lý tệp).
               </p>
             </div>
             <div className="player-confirm-foot">
-              <button className="btn btn-outline" onClick={() => setConfirmAsk(null)}>取消</button>
+              <button className="btn btn-outline" onClick={() => setConfirmAsk(null)}>Hủy</button>
               <button
                 className={`btn ${confirmAsk._del ? 'btn-danger-solid' : 'btn-primary'}`}
                 onClick={async () => {
@@ -664,7 +664,7 @@ function DownloadManager({ onNavigate }) {
                   await fn(del);
                 }}
               >
-                {confirmAsk._del ? '删除任务和文件' : '仅删除记录'}
+                {confirmAsk._del ? 'Xóa tác vụ và tệp' : 'Chỉ xóa bản ghi'}
               </button>
             </div>
           </div>

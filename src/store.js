@@ -10,14 +10,14 @@ let dataFile = null;
 let cache = null; // { settings, tasks }
 
 function loadCache() {
-  if (!dataFile) throw new Error('store 未初始化');
+  if (!dataFile) throw new Error('store chưa được khởi tạo');
   if (cache) return cache;
   try {
     if (fs.existsSync(dataFile)) {
       cache = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
     }
   } catch (e) {
-    console.error('[Store] 读取数据文件失败，使用空数据:', e.message);
+    console.error('[Store] Đọc tệp dữ liệu thất bại, dùng dữ liệu rỗng:', e.message);
   }
   if (!cache || typeof cache !== 'object') cache = {};
   if (!Array.isArray(cache.tasks)) cache.tasks = [];
@@ -31,7 +31,7 @@ function flush() {
     fs.mkdirSync(path.dirname(dataFile), { recursive: true });
     fs.writeFileSync(dataFile, JSON.stringify(cache || {}, null, 2), 'utf8');
   } catch (e) {
-    console.error('[Store] 写入数据文件失败:', e.message);
+    console.error('[Store] Ghi tệp dữ liệu thất bại:', e.message);
   }
 }
 

@@ -91,6 +91,62 @@
   font-weight: 600;
 }
 
+.browse-filter {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.browse-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.browse-filter-row .input-field {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.browse-filter-row .browse-filter-num {
+  flex: 0 0 72px;
+}
+
+.browse-filter-label {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.browse-filter-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.genre-chip.tag-inc {
+  border-color: var(--success);
+  color: var(--success);
+  font-weight: 600;
+}
+
+.genre-chip.tag-exc {
+  border-color: var(--danger);
+  color: var(--danger);
+  text-decoration: line-through;
+}
+
+.browse-filter-sum {
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+}
+
 .browse-loading {
   display: flex;
   align-items: center;

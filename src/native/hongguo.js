@@ -78,10 +78,16 @@ const MODEL_BIZ_PARAM = {
   video_platform: 1024,
 };
 
+// 熔断：官方接口返回空响应（网关直接丢弃）时，一段时间内不再请求，直接走官网兜底，
+// 否则每集都要白等 3 次重试（实测约 13 秒/次）
+const API_COOLDOWN_MS = 10 * 60 * 1000;
+let apiDownUntil = 0;
+
 /**
  * API 调用封装
  */
 async function apiCall(apiPath, body, retries = 3) {
+  if (Date.now() < apiDownUntil) throw new Error('đang không phản hồi, tạm bỏ qua');
   const q = { ...COMMON_QUERY, _rticket: Date.now().toString() };
   for (let i = 0; i < retries; i++) {
     const signal = {}; // 供错误信息回溯（HTTP 状态 / 字节数 / CDN logid）
@@ -104,7 +110,7 @@ async function apiCall(apiPath, body, retries = 3) {
       if (buf.length === 0) {
         // 服务端返回 200 但无任何内容：网关在做业务处理前就丢弃了请求
         const err = new Error(
-          `接口返回空响应（HTTP 200，0 字节）${signal.logid ? ' logid=' + signal.logid : ''}`
+          `API trả về phản hồi rỗng (HTTP 200, 0 byte)${signal.logid ? ' logid=' + signal.logid : ''}`
         );
         err.emptyResponse = true;
         err.detail = signal;
@@ -114,12 +120,14 @@ async function apiCall(apiPath, body, retries = 3) {
       try {
         return JSON.parse(text);
       } catch (e) {
-        const err = new Error(`响应不是合法 JSON（HTTP 200，${buf.length} 字节）: ${text.slice(0, 100)}`);
+        const err = new Error(`Phản hồi không phải JSON hợp lệ (HTTP 200, ${buf.length} byte): ${text.slice(0, 100)}`);
         err.detail = signal;
         throw err;
       }
     } catch (err) {
-      if (i === retries - 1) {
+      // 空响应是确定性的拒绝，重试无意义
+      if (err.emptyResponse) apiDownUntil = Date.now() + API_COOLDOWN_MS;
+      if (i === retries - 1 || err.emptyResponse) {
         if (err.detail === undefined) err.detail = signal;
         throw err;
       }
@@ -170,15 +178,15 @@ async function fetchEpisodeListFromWeb(seriesId) {
   const html = await fetchSiteHtml(`${SITE_ORIGIN}/player/${encodeURIComponent(seriesId)}`);
 
   const m = html.match(/"vid_list"\s*:\s*\[([^\]]*)\]/);
-  if (!m) throw new Error('官网页面未找到分集数据（vid_list）');
+  if (!m) throw new Error('Không tìm thấy dữ liệu tập phim (vid_list) trên trang web chính thức');
 
   const vids = m[1]
     .split(',')
     .map((s) => s.trim().replace(/^"|"$/g, ''))
     .filter((s) => /^\d+$/.test(s));
-  if (!vids.length) throw new Error('官网分集列表为空');
+  if (!vids.length) throw new Error('Danh sách tập trên trang web chính thức trống');
 
-  const seriesTitle = pickJsonString(html, 'series_name') || '未命名短剧';
+  const seriesTitle = pickJsonString(html, 'series_name') || 'Phim chưa đặt tên';
   const cover = pickJsonString(html, 'series_cover');
 
   const episodes = vids.map((vid, i) => ({
@@ -221,12 +229,14 @@ async function fetchPlayUrlFromWeb(vid, sid) {
 
       const videoUrl = normalizeVideoUrl(m[1]);
       if (!/^https?:\/\//i.test(videoUrl)) continue;
+      // 官网对不存在/不公开的分集会回落到剧集默认页（第 1 集），直链里的 vid 不是本集就不能用
+      if (!videoUrl.includes(String(vid))) continue;
       return { url: videoUrl, spadeA: null, codec: '', source: 'web' };
     } catch (e) {
       lastErr = e;
     }
   }
-  if (lastErr) console.warn('[Web] 取播放直链失败:', lastErr.message);
+  if (lastErr) console.warn('[Web] Lấy liên kết phát trực tiếp thất bại:', lastErr.message);
   return null;
 }
 
@@ -261,7 +271,7 @@ async function resolveSeriesId(shareUrl) {
   m = bodyText.match(/video_series_id=(\d+)/) || bodyText.match(/"video_id"\s*:\s*"(\d+)"/) || bodyText.match(/"series_id"\s*:\s*"(\d+)"/);
   if (m) return m[1];
 
-  throw new Error("无法从链接解析 series_id: " + finalUrl);
+  throw new Error("Không thể phân tích series_id từ liên kết: " + finalUrl);
 }
 
 /**
@@ -278,24 +288,24 @@ async function fetchEpisodeList(seriesId) {
     j = await apiCall("/novel/player/multi_video_detail/preload/v1", body);
   } catch (e) {
     // 官方 App 接口不可用时，自动降级到官网网页版数据源
-    console.warn('[Hongguo] detail API 不可用，改用官网数据源:', e.message);
+    console.warn('[Hongguo] detail API không khả dụng, chuyển sang nguồn dữ liệu trang web chính thức:', e.message);
     try {
       const webData = await fetchEpisodeListFromWeb(seriesId);
-      console.log(`[Hongguo] 官网数据源成功:《${webData.series_title}》共 ${webData.total} 集`);
+      console.log(`[Hongguo] Nguồn dữ liệu trang web chính thức thành công: «${webData.series_title}», tổng ${webData.total} tập`);
       return webData;
     } catch (webErr) {
       throw new Error(
-        `获取分集失败：官方接口不可用（${e.message}），官网兜底也失败（${webErr.message}）`
+        `Lấy danh sách tập thất bại: API chính thức không khả dụng (${e.message}), phương án dự phòng qua trang web chính thức cũng thất bại (${webErr.message})`
       );
     }
   }
   if (!j || j.code !== 0) {
-    throw new Error("detail API 失败: " + JSON.stringify(j || {}).slice(0, 200));
+    throw new Error("detail API thất bại: " + JSON.stringify(j || {}).slice(0, 200));
   }
   const d = j.data || {};
   const sid = Object.keys(d)[0];
   if (!sid) {
-    throw new Error("未获取到剧集数据");
+    throw new Error("Không lấy được dữ liệu phim");
   }
   const vd = d[sid]?.video_data || {};
   const vl = vd.video_list || [];
@@ -310,7 +320,7 @@ async function fetchEpisodeList(seriesId) {
   eps.sort((a, b) => a.vid_index - b.vid_index);
   return {
     series_id: String(sid),
-    series_title: vd.series_title || '未命名短剧',
+    series_title: vd.series_title || 'Phim chưa đặt tên',
     cover: vd.series_cover || vd.cover_url || (eps[0] && eps[0].cover) || '',
     total: eps.length,
     episodes: eps,
@@ -387,12 +397,14 @@ async function fetchPlayUrlSingle(vid, sid) {
     dr_scene: "preload",
     mixed_video_id_map: { "1004": [vid] },
   };
+  let apiErr = 'không có luồng phát';
   try {
     const j = await apiCall("/novel/player/multi_video_model/preload/v1", body);
     const item = j?.data?.[vid] || {};
     const [url, spadeA, codec] = parseModelVideo(item.video_model);
     if (url) return { url, spadeA, codec, source: 'api' };
   } catch (e) {
+    apiErr = e.message;
     // 落到下面的官网兜底
   }
   // 官方 App 接口不可用时，改用官网内嵌的 MP4 直链（明文，无需解密）
@@ -400,7 +412,10 @@ async function fetchPlayUrlSingle(vid, sid) {
     const web = await fetchPlayUrlFromWeb(vid, sid);
     if (web && web.url) return web;
   } catch (_) {}
-  return { url: null, spadeA: null, codec: null };
+  return {
+    url: null, spadeA: null, codec: null,
+    error: `API ứng dụng: ${apiErr}; trang web không công khai tập này`,
+  };
 }
 
 /**

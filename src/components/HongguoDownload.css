@@ -375,6 +375,8 @@
 }
 
 .search-count {
+  display: flex;
+  align-items: center;
   margin: 14px 0 10px;
   font-size: 13px;
   color: var(--text-secondary);

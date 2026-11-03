@@ -18,7 +18,13 @@ const hongguo = require('./src/native/hongguo');
 const store = require('./src/store');
 const APP_VERSION = app.getVersion() || '1.0.0';
 
-const APP_TITLE = '红果短剧下载器';
+const APP_TITLE = 'Trình tải phim ngắn Hongguo';
+const DOWNLOAD_SUBDIR = 'Phim ngắn Hongguo';
+const MERGED_SUFFIX = 'Bản gộp';
+// 合并产物识别：兼容旧版「合集」与新版「Bản gộp」（macOS 文件名可能是 NFD，先归一化）
+const isMergedName = (n) => { const s = String(n).normalize('NFC'); return s.includes('合集') || s.includes(MERGED_SUFFIX); };
+// 从文件名末尾取集号：兼容「剧名 001.mp4」「X_Tập 001.mp4」与旧版「X_第001集.mp4」
+const EP_FILE_RE = /(\d{1,4})(?:\s*集)?\.mp4$/i;
 
 let mainWindow = null;
 
@@ -100,12 +106,15 @@ function getDefaultSettings() {
   return {
     root: app.getPath('downloads'),
     // 文件命名模板：可用变量 剧名(series_title) 集数(vid_index) 标题(ep_title)
-    name_format: '剧名 集数',
+    name_format: 'Tên phim Số tập',
     max_concurrent: 3,
     // 看完一集后自动删除本地文件（边看边清，避免占用磁盘）
     auto_delete_watched: false,
     // 兼容模式：本机无法解码 HEVC 时自动转码为 H.264（解决「黑屏有声」）
     compat_mode: true,
+    // 一部剧的所有任务都下载完成后自动合并成一个文件；compatible=转码为 H.264
+    auto_merge: false,
+    auto_merge_compatible: false,
     // ===== 网络代理 =====
     // proxy_enabled: 是否启用代理（关闭时忽略系统代理，直连）
     // proxy_mode:    system=跟随系统/环境变量 · custom=手动指定 · direct=强制直连
@@ -188,7 +197,7 @@ async function applyProxyToSession(resolved) {
       await ses.setProxy({ mode: 'system' });
     }
   } catch (e) {
-    console.error('[Proxy] 设置窗口代理失败:', e.message);
+    console.error('[Proxy] Thiết lập proxy cho cửa sổ thất bại:', e.message);
   }
 }
 
@@ -197,7 +206,7 @@ async function applyProxySettings(settings) {
   const resolved = resolveProxyConfig(settings);
   applyProxyToEnv(resolved);
   await applyProxyToSession(resolved);
-  console.log(`[Proxy] mode=${resolved.mode} url=${resolved.url || '(直连)'}`);
+  console.log(`[Proxy] mode=${resolved.mode} url=${resolved.url || '(kết nối trực tiếp)'}`);
   return resolved;
 }
 
@@ -228,14 +237,18 @@ function renderName(format, seriesTitle, vidIndex, epTitle) {
     'vid_index': String(vidIndex).padStart(3, '0'),
     'ep_title': String(epTitle || '').trim(),
   };
-  const zhMap = {
+  // 别名先替换成英文变量名，再走 [A-Za-z]+ 变量替换；中文别名保留以兼容旧设置
+  const aliasMap = {
     '剧名': 'series_title',
     '集数': 'vid_index',
     '标题': 'ep_title',
+    'Tên phim': 'series_title',
+    'Số tập': 'vid_index',
+    'Tiêu đề': 'ep_title',
   };
-  const zhRe = /剧名|集数|标题/g;
-  let name = fmt
-    .replace(zhRe, (w) => zhMap[w] || w)
+  const aliasRe = /剧名|集数|标题|Tên phim|Số tập|Tiêu đề/g;
+  let name = fmt.normalize('NFC')
+    .replace(aliasRe, (w) => aliasMap[w] || w)
     .replace(/([A-Za-z]+(?:_[A-Za-z]+)*)/g, (tok) => (vars[tok] !== undefined ? (vars[tok] || '') : tok));
   name = name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/\s+/g, ' ').trim();
   return name || null;
@@ -250,7 +263,7 @@ function loadDownloadTasks() {
     return {
       ...task,
       status: inProgress ? 'failed' : task.status,
-      error: inProgress ? '应用关闭时任务中断' : task.error,
+      error: inProgress ? 'Tác vụ bị gián đoạn do ứng dụng đóng' : task.error,
     };
   });
 }
@@ -268,7 +281,7 @@ function rebuildSeriesRegistryFromTasks() {
     if (!groups.has(sid)) {
       groups.set(sid, {
         series_id: sid,
-        series_title: info.series_title || '未命名短剧',
+        series_title: info.series_title || 'Phim chưa đặt tên',
         cover: (t.videoInfo && t.videoInfo.cover) || '',
         episodes: new Map(),
       });
@@ -309,7 +322,7 @@ function rebuildSeriesRegistryFromTasks() {
   }
   if (added > 0) {
     saveSeriesRegistry();
-    console.log(`[Series] 从下载任务回填 ${added} 部短剧档案`);
+    console.log(`[Series] Đã khôi phục ${added} hồ sơ phim ngắn từ tác vụ tải xuống`);
   }
 }
 
@@ -342,7 +355,7 @@ function upsertSeriesRegistry(data) {
   const idx = seriesRegistry.findIndex((s) => String(s.series_id) === sid);
   const entry = {
     series_id: sid,
-    series_title: data.series_title || '未命名短剧',
+    series_title: data.series_title || 'Phim chưa đặt tên',
     cover: data.cover || '',
     total: data.episodes.length,
     episodes: data.episodes.map((e) => ({
@@ -382,10 +395,36 @@ async function runTask(task) {
   try {
     await executeDownload(task);
   } catch (error) {
-    console.error('[Download Queue] 下载失败:', error);
+    console.error('[Download Queue] Tải xuống thất bại:', error);
   } finally {
     activeDownloads--;
     pumpQueue();
+  }
+  maybeAutoMerge(task);
+}
+
+// 正在发起自动合并的 series_id（同一时刻多集同时完成时避免重复合并）
+const autoMerging = new Set();
+
+/** 某剧的任务全部完成（无等待/下载中/失败/停止）时，按设置自动合并 */
+async function maybeAutoMerge(task) {
+  if (task.status !== 'completed' || !task.hongguoInfo) return;
+  const settings = getCurrentSettings();
+  if (!settings.auto_merge) return;
+  const sid = String(task.hongguoInfo.series_id);
+  if (autoMerging.has(sid)) return;
+  const siblings = downloadTasks.filter((t) => t.hongguoInfo && String(t.hongguoInfo.series_id) === sid);
+  if (!siblings.every((t) => t.status === 'completed')) return;
+  // 只合并整部剧：避免播放页零散补下几集时就提前产出不完整的合集
+  const entry = seriesRegistry.find((s) => String(s.series_id) === sid);
+  if (entry && Array.isArray(entry.episodes) && siblings.length < entry.episodes.length) return;
+  if (mergeTasks.some((m) => m.seriesId === sid && m.status === 'running')) return;
+  autoMerging.add(sid);
+  try {
+    const res = await startMerge(sid, '', { compatible: !!settings.auto_merge_compatible });
+    if (!res.success) console.warn('[AutoMerge] Bỏ qua:', res.error);
+  } finally {
+    autoMerging.delete(sid);
   }
 }
 
@@ -412,13 +451,13 @@ function pauseAllTasks() {
   for (const task of downloadTasks) {
     if (task.status === 'pending') {
       task.status = 'stopped';
-      task.error = '已手动暂停';
+      task.error = 'Đã tạm dừng thủ công';
       task.endTime = Date.now();
       stopped++;
     } else if (task.status === 'downloading') {
       task.cancelled = true;
       if (task.cancelSource) {
-        try { task.cancelSource.cancel('用户一键暂停'); } catch (_) {}
+        try { task.cancelSource.cancel('Người dùng tạm dừng tất cả'); } catch (_) {}
       }
       if (task.writer) {
         try { task.writer.end(); } catch (_) {}
@@ -470,7 +509,7 @@ async function executeDownload(task) {
     await executeHongguoDownload(task);
     return;
   }
-  throw new Error('未知任务类型: ' + task.type);
+  throw new Error('Loại tác vụ không xác định: ' + task.type);
 }
 
 // ===== 红果短剧下载 =====
@@ -479,7 +518,7 @@ async function executeHongguoDownload(task) {
   const { vid, series_title, vid_index } = hongguoInfo || {};
 
   try {
-    console.log(`[Hongguo] 开始下载《${series_title}》第${vid_index}集:`, vid);
+    console.log(`[Hongguo] Bắt đầu tải xuống 《${series_title}》 Tập ${vid_index}:`, vid);
     task.status = 'downloading';
     task.progress = 0;
     sendToRenderer('download-progress', { id, progress: 0, receivedBytes: 0, totalBytes: 0 });
@@ -487,14 +526,14 @@ async function executeHongguoDownload(task) {
     // 1. 获取播放直链与 spade_a 加密信息（官网兜底时 spadeA 为空，直链为明文 MP4）
     const playInfo = await hongguo.fetchPlayUrlSingle(vid, hongguoInfo && hongguoInfo.series_id);
     if (!playInfo || !playInfo.url) {
-      throw new Error('未获取到有效播放地址');
+      throw new Error('Không lấy được địa chỉ phát hợp lệ' + (playInfo && playInfo.error ? ' (' + playInfo.error + ')' : ''));
     }
 
     // 2. 下载目录
     const settings = getCurrentSettings();
     const root = (settings.root && String(settings.root).trim()) ? String(settings.root).trim() : app.getPath('downloads');
-    const seriesFolder = sanitizeFolderName(series_title) || '未命名短剧';
-    const downloadDir = task.customDir || path.join(root, '红果短剧', seriesFolder);
+    const seriesFolder = sanitizeFolderName(series_title) || 'Phim chưa đặt tên';
+    const downloadDir = task.customDir || path.join(root, DOWNLOAD_SUBDIR, seriesFolder);
     fs.mkdirSync(downloadDir, { recursive: true });
 
     const finalPath = task.savePath || path.join(downloadDir, filename);
@@ -502,7 +541,7 @@ async function executeHongguoDownload(task) {
 
     // 目标已存在且大小合格，跳过重下
     if (fs.existsSync(finalPath) && fs.statSync(finalPath).size > 1024 * 100) {
-      console.log('[Hongguo] 文件已存在，直接完成:', finalPath);
+      console.log('[Hongguo] Tệp đã tồn tại, hoàn tất ngay:', finalPath);
       task.status = 'completed';
       task.progress = 100;
       task.endTime = Date.now();
@@ -572,10 +611,10 @@ async function executeHongguoDownload(task) {
 
     // 4. CENC-AES-CTR 解密
     if (playInfo.spadeA) {
-      console.log('[Hongguo] 正在派生 AES Key 并解密 MP4...');
+      console.log('[Hongguo] Đang tạo AES Key và giải mã MP4...');
       const key = hongguo.deriveKey(playInfo.spadeA);
       if (!key) {
-        throw new Error('Key 派生失败');
+        throw new Error('Tạo key thất bại');
       }
       hongguo.decryptMp4File(tmpPath, finalPath, key);
       try { fs.unlinkSync(tmpPath); } catch (_) {}
@@ -588,10 +627,10 @@ async function executeHongguoDownload(task) {
     task.endTime = Date.now();
     saveDownloadTasks();
 
-    console.log('[Hongguo] 下载完成:', finalPath);
+    console.log('[Hongguo] Tải xuống hoàn tất:', finalPath);
     sendToRenderer('download-completed', { id, path: finalPath });
   } catch (error) {
-    console.error('[Hongguo] 下载失败:', error.message);
+    console.error('[Hongguo] Tải xuống thất bại:', error.message);
     delete task.cancelSource;
     delete task.writer;
     task.status = 'failed';
@@ -616,7 +655,7 @@ ipcMain.handle('hongguo-resolve', async (event, input) => {
     upsertSeriesRegistry(data);
     return { success: true, data };
   } catch (error) {
-    console.error('[Hongguo] 解析失败:', error.message);
+    console.error('[Hongguo] Phân tích thất bại:', error.message);
     return { success: false, error: error.message };
   }
 });
@@ -636,7 +675,7 @@ function getSearchWindow() {
     width: 1100,
     height: 820,
     show: false,
-    title: '搜索 - 红果短剧',
+    title: 'Tìm kiếm - Phim ngắn Hongguo',
     autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,
@@ -768,12 +807,12 @@ async function runSniffOnUrl(url, label) {
 
   // 同一窗口串行执行，避免并发导航互相打断
   const task = async () => {
-    console.log(`[${label}] 打开:`, url);
+    console.log(`[${label}] Mở:`, url);
     try {
       await win.loadURL(url, { userAgent: SEARCH_UA });
     } catch (e) {
       // loadURL 在页面内有重定向/中断时也可能 reject，这里继续尝试读取 DOM
-      console.warn(`[${label}] loadURL 返回异常（继续尝试读取）:`, e.message);
+      console.warn(`[${label}] loadURL trả về lỗi (vẫn tiếp tục đọc):`, e.message);
     }
 
     const deadline = Date.now() + SEARCH_TIMEOUT_MS;
@@ -810,7 +849,7 @@ async function runSniffOnUrl(url, label) {
         url: `${SEARCH_SITE}/detail?series_id=${r.series_id}`,
       }));
 
-    console.log(`[${label}] 命中 ${results.length} 部`);
+    console.log(`[${label}] Tìm thấy ${results.length} phim`);
     return { success: true, results, meta };
   };
 
@@ -827,10 +866,10 @@ async function runSearchSniff(keyword) {
 
 // ===== 浏览：分类页（含题材筛选与分页）=====
 const BROWSE_CATEGORIES = [
-  { slug: 'real-drama', label: '真人剧' },
-  { slug: 'comic-drama', label: '漫剧' },
-  { slug: 'ai-drama', label: 'AI剧' },
-  { slug: 'comic', label: '漫画' },
+  { slug: 'real-drama', label: 'Phim người đóng' },
+  { slug: 'comic-drama', label: 'Phim hoạt hình' },
+  { slug: 'ai-drama', label: 'Phim AI' },
+  { slug: 'comic', label: 'Truyện tranh' },
 ];
 
 ipcMain.handle('browse-categories', async () => BROWSE_CATEGORIES);
@@ -858,18 +897,18 @@ ipcMain.handle('browse-list', async (event, options) => {
       pageTitle: res.pageTitle || '',
     };
   } catch (error) {
-    console.error('[Browse] 失败:', error.message);
+    console.error('[Browse] Thất bại:', error.message);
     return { success: false, error: error.message };
   }
 });
 
 ipcMain.handle('search-series', async (event, keyword) => {
   const kw = String(keyword || '').trim();
-  if (!kw) return { success: false, error: '请输入搜索关键词' };
+  if (!kw) return { success: false, error: 'Vui lòng nhập từ khóa tìm kiếm' };
   try {
     return await runSearchSniff(kw);
   } catch (error) {
-    console.error('[Search] 失败:', error.message);
+    console.error('[Search] Thất bại:', error.message);
     return { success: false, error: error.message };
   }
 });
@@ -877,12 +916,12 @@ ipcMain.handle('search-series', async (event, keyword) => {
 // 搜索选中某部剧后，拉取完整分集并登记档案
 ipcMain.handle('search-resolve', async (event, seriesId) => {
   try {
-    if (!seriesId) return { success: false, error: '缺少 series_id' };
+    if (!seriesId) return { success: false, error: 'Thiếu series_id' };
     const data = await hongguo.fetchEpisodeList(String(seriesId));
     upsertSeriesRegistry(data);
     return { success: true, data };
   } catch (error) {
-    console.error('[Search] 拉取分集失败:', error.message);
+    console.error('[Search] Lấy danh sách tập thất bại:', error.message);
     return { success: false, error: error.message };
   }
 });
@@ -906,7 +945,7 @@ ipcMain.handle('get-series-list', async () => visibleSeries());
 ipcMain.handle('remove-series', async (event, seriesId) => {
   const sid = String(seriesId);
   const entry = seriesRegistry.find((s) => String(s.series_id) === sid);
-  if (!entry) return { success: false, error: '未找到该剧' };
+  if (!entry) return { success: false, error: 'Không tìm thấy phim này' };
   entry.dismissed = true;
   saveSeriesRegistry();
   return { success: true };
@@ -975,7 +1014,7 @@ function rescanDownloadsFromDisk() {
         savePath: f.path,
         customDir: scanned.dir,
         filename: f.filename,
-        title: `《${s.series_title}》第${String(f.vid_index).padStart(3, '0')}集`,
+        title: `《${s.series_title}》 Tập ${String(f.vid_index).padStart(3, '0')}`,
         platform: 'hongguo',
         type: 'hongguo',
         status: 'completed',
@@ -985,7 +1024,7 @@ function rescanDownloadsFromDisk() {
         startTime: Date.now(),
         videoInfo: {
           author: s.series_title,
-          title: `《${s.series_title}》第${String(f.vid_index).padStart(3, '0')}集`,
+          title: `《${s.series_title}》 Tập ${String(f.vid_index).padStart(3, '0')}`,
           cover: s.cover || '',
           aweme_id: ep ? ep.vid : '',
         },
@@ -1002,7 +1041,7 @@ function rescanDownloadsFromDisk() {
     }
   }
   if (added > 0) saveDownloadTasks();
-  console.log(`[Rescan] 从磁盘补回 ${added} 条下载记录`);
+  console.log(`[Rescan] Đã khôi phục ${added} bản ghi tải xuống từ ổ đĩa`);
   return { success: true, count: added };
 }
 
@@ -1010,7 +1049,7 @@ ipcMain.handle('rescan-downloads', async () => {
   try {
     return rescanDownloadsFromDisk();
   } catch (error) {
-    console.error('[Rescan] 失败:', error.message);
+    console.error('[Rescan] Thất bại:', error.message);
     return { success: false, error: error.message };
   }
 });
@@ -1125,7 +1164,7 @@ ipcMain.handle('get-ffmpeg-status', async () => {
 // 在文件管理器中定位文件
 ipcMain.handle('show-in-folder', async (event, filePath) => {
   try {
-    if (!filePath) return { success: false, error: '缺少路径' };
+    if (!filePath) return { success: false, error: 'Thiếu đường dẫn' };
     if (fs.existsSync(filePath)) {
       shell.showItemInFolder(filePath);
       return { success: true };
@@ -1135,7 +1174,7 @@ ipcMain.handle('show-in-folder', async (event, filePath) => {
       await shell.openPath(dir);
       return { success: true };
     }
-    return { success: false, error: '路径不存在' };
+    return { success: false, error: 'Đường dẫn không tồn tại' };
   } catch (e) {
     return { success: false, error: e.message };
   }
@@ -1149,8 +1188,13 @@ function resolveSeriesDir(seriesId, seriesTitle, covers) {
   if (fromTask) return fromTask.customDir;
   const settings = getCurrentSettings();
   const root = (settings.root && String(settings.root).trim()) ? String(settings.root).trim() : app.getPath('downloads');
-  const guess = path.join(root, '红果短剧', sanitizeFolderName(seriesTitle) || '未命名短剧');
-  return fs.existsSync(guess) ? guess : null;
+  const folder = sanitizeFolderName(seriesTitle);
+  // 旧版目录（红果短剧/未命名短剧）也要能找到，兼容升级前下载的文件
+  const guesses = [
+    path.join(root, DOWNLOAD_SUBDIR, folder || 'Phim chưa đặt tên'),
+    path.join(root, '红果短剧', folder || '未命名短剧'),
+  ];
+  return guesses.find((g) => fs.existsSync(g)) || null;
 }
 
 /**
@@ -1188,9 +1232,9 @@ function collectSeriesEpisodeFiles(seriesId, seriesTitle) {
     let names = [];
     try { names = fs.readdirSync(dir); } catch (_) {}
     for (const n of names) {
-      if (!/\.mp4$/i.test(n) || n.includes('合集')) continue;
+      if (!/\.mp4$/i.test(n) || isMergedName(n)) continue;
       // 形如「剧名 001.mp4」——取文件名末尾的数字作为集号
-      const m = n.match(/(\d{1,4})\.mp4$/i);
+      const m = n.match(EP_FILE_RE);
       if (!m) continue;
       const idx = parseInt(m[1], 10);
       if (!idx || byIndex.has(idx)) continue;
@@ -1205,33 +1249,35 @@ function collectSeriesEpisodeFiles(seriesId, seriesTitle) {
   };
 }
 
-ipcMain.handle('merge-series', async (event, seriesId, outputName, options) => {
+ipcMain.handle('merge-series', (event, ...args) => startMerge(...args));
+
+async function startMerge(seriesId, outputName, options) {
   try {
     const sid = String(seriesId);
     const entry = seriesRegistry.find((s) => String(s.series_id) === sid);
     const seriesTitle =
       (entry && entry.series_title) ||
       ((downloadTasks.find((t) => t.hongguoInfo && String(t.hongguoInfo.series_id) === sid) || {}).hongguoInfo || {}).series_title ||
-      '未命名短剧';
+      'Phim chưa đặt tên';
     const entries = (entry && entry.episodes) || [];
 
     const { dir, ordered } = collectSeriesEpisodeFiles(sid, seriesTitle);
-    if (!ordered.length) return { success: false, error: '该剧还没有已下载完成的分集' };
+    if (!ordered.length) return { success: false, error: 'Phim này chưa có tập nào tải xuống hoàn tất' };
 
     const ffmpegPath = resolveFfmpeg('ffmpeg');
     const ffprobePath = resolveFfmpeg('ffprobe');
     if (!ffmpegPath) {
-      return { success: false, error: '未找到 ffmpeg，无法合并（请重装完整版本）' };
+      return { success: false, error: 'Không tìm thấy ffmpeg, không thể gộp (vui lòng cài lại bản đầy đủ)' };
     }
 
     const outDir = dir || path.dirname(ordered[0].path);
     const baseName = outputName && String(outputName).trim()
       ? sanitizeFolderName(outputName)
-      : `${sanitizeFolderName(seriesTitle)}_合集`;
+      : `${sanitizeFolderName(seriesTitle)}_${MERGED_SUFFIX}`;
     const output = path.join(outDir, `${baseName}.mp4`);
 
     if (fs.existsSync(output)) {
-      return { success: false, error: `输出文件已存在：${baseName}.mp4，请先删除或换个名字` };
+      return { success: false, error: `Tệp đầu ra đã tồn tại: ${baseName}.mp4, vui lòng xóa trước hoặc đổi tên khác` };
     }
 
     // 磁盘空间检查（输出约等于各集之和）
@@ -1242,7 +1288,7 @@ ipcMain.handle('merge-series', async (event, seriesId, outputName, options) => {
       if (free < totalBytes * 1.1) {
         return {
           success: false,
-          error: `磁盘空间不足：需要约 ${(totalBytes / 1073741824).toFixed(1)} GB，可用 ${(free / 1073741824).toFixed(1)} GB`,
+          error: `Không đủ dung lượng ổ đĩa: cần khoảng ${(totalBytes / 1073741824).toFixed(1)} GB, còn trống ${(free / 1073741824).toFixed(1)} GB`,
         };
       }
     } catch (_) {}
@@ -1256,7 +1302,7 @@ ipcMain.handle('merge-series', async (event, seriesId, outputName, options) => {
         if (i <= 0 || i >= ordered.length) continue;
         const s = await probeVideoInfo(ffprobePath, ordered[i].path);
         if (first && s && (first.codec !== s.codec || first.w !== s.w || first.h !== s.h)) {
-          codecWarning = `第 ${ordered[i].vid_index} 集编码与首集不一致（${s.codec} ${s.w}x${s.h} vs ${first.codec} ${first.w}x${first.h}），合并后可能出现花屏`;
+          codecWarning = `Tập ${ordered[i].vid_index} có mã hóa khác tập đầu (${s.codec} ${s.w}x${s.h} so với ${first.codec} ${first.w}x${first.h}), bản gộp có thể bị lỗi hình`;
           break;
         }
       }
@@ -1310,7 +1356,7 @@ ipcMain.handle('merge-series', async (event, seriesId, outputName, options) => {
         ? ['-c:v', 'h264_amf', '-quality', 'speed', '-rc', 'cqp', '-qp_i', '23', '-qp_p', '23']
         : ['-c:v', encoder, '-cq', '23'];
       videoArgs = [...videoArgs, '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k'];
-      console.log('[Merge] 兼容格式合并，编码器:', encoder);
+      console.log('[Merge] Gộp ở định dạng tương thích, bộ mã hóa:', encoder);
     } else {
       videoArgs = ['-c', 'copy'];
     }
@@ -1324,7 +1370,7 @@ ipcMain.handle('merge-series', async (event, seriesId, outputName, options) => {
       '-f', 'mp4',
       tmpOutput,
     ];
-    console.log('[Merge] 开始合并', ordered.length, '集 ->', output);
+    console.log('[Merge] Bắt đầu gộp', ordered.length, 'tập ->', output);
     const child = spawn(ffmpegPath, args, { windowsHide: true });
     task.child = child;
 
@@ -1353,7 +1399,7 @@ ipcMain.handle('merge-series', async (event, seriesId, outputName, options) => {
 
     child.on('error', (err) => {
       task.status = 'failed';
-      task.error = '无法启动 ffmpeg: ' + err.message;
+      task.error = 'Không thể khởi động ffmpeg: ' + err.message;
       saveMergeTasks();
       sendToRenderer('merge-failed', { id, error: task.error });
     });
@@ -1364,7 +1410,7 @@ ipcMain.handle('merge-series', async (event, seriesId, outputName, options) => {
       if (task.cancelled) {
         try { fs.existsSync(tmpOutput) && fs.unlinkSync(tmpOutput); } catch (_) {}
         task.status = 'stopped';
-        task.error = '已取消';
+        task.error = 'Đã hủy';
       } else if (code === 0 && fs.existsSync(tmpOutput)) {
         try {
           fs.renameSync(tmpOutput, output);
@@ -1373,12 +1419,12 @@ ipcMain.handle('merge-series', async (event, seriesId, outputName, options) => {
           task.progress = 100;
           task.done = ordered.length;
           task.outputBytes = size;
-          console.log('[Merge] 完成:', output, (size / 1048576).toFixed(1) + 'MB');
+          console.log('[Merge] Hoàn tất:', output, (size / 1048576).toFixed(1) + 'MB');
           // 输出校验：确认能被正常解析（避免产出坏文件却报成功）
           if (ffprobePath) {
             probeVideoInfo(ffprobePath, output).then((info) => {
               if (!info) {
-                task.error = '输出文件无法被解析，可能已损坏';
+                task.error = 'Không thể đọc tệp đầu ra, có thể đã bị hỏng';
                 task.status = 'failed';
                 saveMergeTasks();
                 sendToRenderer('merge-failed', { id, error: task.error });
@@ -1392,11 +1438,11 @@ ipcMain.handle('merge-series', async (event, seriesId, outputName, options) => {
           }
         } catch (e) {
           task.status = 'failed';
-          task.error = '重命名输出失败: ' + e.message;
+          task.error = 'Đổi tên tệp đầu ra thất bại: ' + e.message;
         }
       } else {
         task.status = 'failed';
-        task.error = `ffmpeg 退出码 ${code}${stderrTail ? '：' + stderrTail.split('\n').filter(Boolean).slice(-2).join(' ') : ''}`;
+        task.error = `ffmpeg thoát với mã ${code}${stderrTail ? ': ' + stderrTail.split('\n').filter(Boolean).slice(-2).join(' ') : ''}`;
         try { fs.existsSync(tmpOutput) && fs.unlinkSync(tmpOutput); } catch (_) {}
       }
       saveMergeTasks();
@@ -1418,14 +1464,14 @@ ipcMain.handle('merge-series', async (event, seriesId, outputName, options) => {
       codecWarning,
     };
   } catch (error) {
-    console.error('[Merge] 失败:', error.message);
+    console.error('[Merge] Thất bại:', error.message);
     return { success: false, error: error.message };
   }
-});
+}
 
 ipcMain.handle('cancel-merge', async (event, id) => {
   const t = mergeTasks.find((m) => m.id === id);
-  if (!t) return { success: false, error: '任务不存在' };
+  if (!t) return { success: false, error: 'Tác vụ không tồn tại' };
   t.cancelled = true;
   if (t.child) {
     try { t.child.kill(); } catch (_) {}
@@ -1449,7 +1495,7 @@ function loadMergeTasks() {
   try {
     mergeTasks = (store.getMergeTasks() || []).map((t) => {
       // 上次未跑完的合并任务标记为中断
-      if (t.status === 'running') return { ...t, status: 'stopped', error: '应用关闭时中断' };
+      if (t.status === 'running') return { ...t, status: 'stopped', error: 'Bị gián đoạn do ứng dụng đóng' };
       return t;
     });
   } catch (_) {
@@ -1488,7 +1534,7 @@ ipcMain.handle('get-series-episodes', async (event, seriesId) => {
     // 目录兜底：磁盘上可能存在没有任务记录的「孤儿」文件
     // （任务被清理、跨会话下载等），仅靠任务判断会把它们误报成「未下载」。
     const seriesTitle = (entry && entry.series_title) ||
-      (tasks[0] && tasks[0].hongguoInfo.series_title) || '未命名短剧';
+      (tasks[0] && tasks[0].hongguoInfo.series_title) || 'Phim chưa đặt tên';
     let scannedByIndex = new Map();
     let seriesDir = null;
     try {
@@ -1564,7 +1610,7 @@ ipcMain.handle('get-series-episodes', async (event, seriesId) => {
       },
     };
   } catch (error) {
-    console.error('[Player] 读取分集失败:', error.message);
+    console.error('[Player] Đọc danh sách tập thất bại:', error.message);
     return { success: false, error: error.message };
   }
 });
@@ -1647,7 +1693,7 @@ function registerStreamProtocol() {
         },
       });
     } catch (e) {
-      console.error('[Stream] 供给失败:', e.message);
+      console.error('[Stream] Cung cấp dữ liệu thất bại:', e.message);
       return new Response('error', { status: 500 });
     }
   });
@@ -1685,7 +1731,7 @@ function registerLocalProtocol() {
       try {
         size = (await fsp.stat(filePath)).size;
       } catch (_) {
-        console.warn('[Local] 文件不存在:', filePath);
+        console.warn('[Local] Tệp không tồn tại:', filePath);
         return new Response('not found', { status: 404, headers: { 'Content-Type': 'text/plain' } });
       }
 
@@ -1717,7 +1763,7 @@ function registerLocalProtocol() {
         },
       });
     } catch (e) {
-      console.error('[Local] 读取失败:', e.message);
+      console.error('[Local] Đọc tệp thất bại:', e.message);
       return new Response('error', { status: 500, headers: { 'Content-Type': 'text/plain' } });
     }
   });
@@ -1726,7 +1772,7 @@ function registerLocalProtocol() {
 /** 下载整集到内存并解密（官网兜底时直链为明文 MP4，跳过解密） */
 async function fetchDecryptedEpisode(vid, onProgress, seriesId) {
   const playInfo = await hongguo.fetchPlayUrlSingle(vid, seriesId);
-  if (!playInfo || !playInfo.url) throw new Error('未获取到有效播放地址');
+  if (!playInfo || !playInfo.url) throw new Error('Không lấy được địa chỉ phát hợp lệ' + (playInfo && playInfo.error ? ' (' + playInfo.error + ')' : ''));
 
   let headers = { 'User-Agent': hongguo.UA };
   let response;
@@ -1762,7 +1808,7 @@ async function fetchDecryptedEpisode(vid, onProgress, seriesId) {
   if (playInfo.spadeA) {
     if (onProgress) onProgress(buf.length, buf.length, 'decrypting');
     const key = hongguo.deriveKey(playInfo.spadeA);
-    if (!key) throw new Error('密钥派生失败');
+    if (!key) throw new Error('Tạo khóa giải mã thất bại');
     buf = hongguo.decryptMp4Buffer(buf, key);
   }
   return buf;
@@ -1775,7 +1821,7 @@ async function fetchDecryptedEpisode(vid, onProgress, seriesId) {
 ipcMain.handle('prepare-online-play', async (event, payload) => {
   try {
     const { vid, seriesId, vidIndex } = payload || {};
-    if (!vid) return { success: false, error: '缺少 vid' };
+    if (!vid) return { success: false, error: 'Thiếu vid' };
     const key = String(vid);
 
     // 已在缓存
@@ -1802,7 +1848,7 @@ ipcMain.handle('prepare-online-play', async (event, payload) => {
     }
 
     const task = (async () => {
-      console.log('[Online] 开始缓存第', vidIndex, '集:', key);
+      console.log('[Online] Bắt đầu lưu đệm tập', vidIndex, ':', key);
       const buf = await fetchDecryptedEpisode(key, (received, total, phase) => {
         sendToRenderer('online-play-progress', {
           vid: key, seriesId, vidIndex,
@@ -1819,8 +1865,8 @@ ipcMain.handle('prepare-online-play', async (event, payload) => {
         vidIndex: Number(vidIndex) || 0,
       });
       trimOnlineCache();
-      console.log('[Online] 缓存完成 第', vidIndex, '集', (buf.length / 1048576).toFixed(1) + 'MB',
-        '当前内存占用', (onlineCacheTotal() / 1048576).toFixed(1) + 'MB');
+      console.log('[Online] Lưu đệm xong tập', vidIndex, (buf.length / 1048576).toFixed(1) + 'MB',
+        'bộ nhớ đang dùng', (onlineCacheTotal() / 1048576).toFixed(1) + 'MB');
       return buf;
     })();
 
@@ -1836,7 +1882,7 @@ ipcMain.handle('prepare-online-play', async (event, payload) => {
       onlinePreparing.delete(key);
     }
   } catch (error) {
-    console.error('[Online] 准备失败:', error.message);
+    console.error('[Online] Chuẩn bị thất bại:', error.message);
     return { success: false, error: error.message };
   }
 });
@@ -1940,10 +1986,10 @@ async function pickH264Encoder(ffmpegPath) {
       compatEncoder = enc;
       break;
     }
-    console.log('[Compat] 编码器不可用，跳过:', enc);
+    console.log('[Compat] Bộ mã hóa không khả dụng, bỏ qua:', enc);
   }
   if (!compatEncoder) compatEncoder = 'libx264';
-  console.log('[Compat] 使用编码器:', compatEncoder);
+  console.log('[Compat] Sử dụng bộ mã hóa:', compatEncoder);
   return compatEncoder;
 }
 
@@ -1954,7 +2000,7 @@ async function pickH264Encoder(ffmpegPath) {
 ipcMain.handle('transcode-for-playback', async (event, payload) => {
   try {
     const { seriesId, vidIndex, filePath, force } = payload || {};
-    if (!seriesId || vidIndex == null) return { success: false, error: '缺少剧集信息' };
+    if (!seriesId || vidIndex == null) return { success: false, error: 'Thiếu thông tin tập phim' };
 
     const out = compatPathFor(seriesId, vidIndex);
     if (!force && fs.existsSync(out) && fs.statSync(out).size > 1024 * 100) {
@@ -1965,14 +2011,14 @@ ipcMain.handle('transcode-for-playback', async (event, payload) => {
 
     const ffmpegPath = resolveFfmpeg('ffmpeg');
     const ffprobePath = resolveFfmpeg('ffprobe');
-    if (!ffmpegPath) return { success: false, error: '未找到 ffmpeg，无法转码' };
+    if (!ffmpegPath) return { success: false, error: 'Không tìm thấy ffmpeg, không thể chuyển mã' };
 
     // 1) 解析输入文件：优先本地已下载；否则先取在线缓存并落临时文件
     let inputPath = filePath || null;
     let tmpInput = null;
     if (!inputPath || !fs.existsSync(inputPath)) {
       const vid = payload.vid;
-      if (!vid) return { success: false, error: '既没有本地文件，也没有 vid' };
+      if (!vid) return { success: false, error: 'Không có tệp cục bộ lẫn vid' };
       let buf = onlineCache.has(String(vid)) ? onlineCache.get(String(vid)).buffer : null;
       if (!buf) {
         buf = await fetchDecryptedEpisode(String(vid), () => {});
@@ -2010,7 +2056,7 @@ ipcMain.handle('transcode-for-playback', async (event, payload) => {
       '-f', 'mp4', tmpOut,
     ];
 
-    console.log(`[Compat] 转码 第${vidIndex}集  编码器=${encoder}  时长=${duration.toFixed(0)}s`);
+    console.log(`[Compat] Chuyển mã tập ${vidIndex}  bộ mã hóa=${encoder}  thời lượng=${duration.toFixed(0)}s`);
     const started = Date.now();
     let stderrTail = '';
     const code = await new Promise((resolve) => {
@@ -2039,20 +2085,20 @@ ipcMain.handle('transcode-for-playback', async (event, payload) => {
     if (code !== 0 || !fs.existsSync(tmpOut)) {
       try { fs.existsSync(tmpOut) && fs.unlinkSync(tmpOut); } catch (_) {}
       const tail = stderrTail.split('\n').filter(Boolean).slice(-2).join(' ').slice(0, 300);
-      console.warn('[Compat] 转码失败 code=', code, tail);
-      return { success: false, error: `转码失败（ffmpeg 退出码 ${code}）${tail ? '：' + tail : ''}` };
+      console.warn('[Compat] Chuyển mã thất bại code=', code, tail);
+      return { success: false, error: `Chuyển mã thất bại (ffmpeg thoát với mã ${code})${tail ? ': ' + tail : ''}` };
     }
 
     fs.renameSync(tmpOut, out);
     trimCompatCache();
     const size = fs.statSync(out).size;
     const elapsed = ((Date.now() - started) / 1000).toFixed(1);
-    console.log(`[Compat] 完成 ${(size / 1048576).toFixed(1)}MB  用时 ${elapsed}s`);
+    console.log(`[Compat] Hoàn tất ${(size / 1048576).toFixed(1)}MB  mất ${elapsed}s`);
 
     sendToRenderer('transcode-progress', { seriesId: String(seriesId), vidIndex: Number(vidIndex), percent: 100, done: true });
     return { success: true, url: localPlayUrl(out), size, elapsed: Number(elapsed), encoder };
   } catch (error) {
-    console.error('[Compat] 转码失败:', error.message);
+    console.error('[Compat] Chuyển mã thất bại:', error.message);
     return { success: false, error: error.message };
   }
 });
@@ -2093,8 +2139,8 @@ function enqueueEpisodes({ seriesId, seriesTitle, episodes, cover }) {
 
   const settings = getCurrentSettings();
   const root = (settings.root && String(settings.root).trim()) ? String(settings.root).trim() : app.getPath('downloads');
-  const cleanSeriesTitle = sanitizeFolderName(seriesTitle) || '红果短剧';
-  const downloadDir = path.join(root, '红果短剧', cleanSeriesTitle);
+  const cleanSeriesTitle = sanitizeFolderName(seriesTitle) || 'Phim ngắn Hongguo';
+  const downloadDir = path.join(root, DOWNLOAD_SUBDIR, cleanSeriesTitle);
   try { fs.mkdirSync(downloadDir, { recursive: true }); } catch (_) {}
 
   const batchId = 'hongguobatch_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
@@ -2113,7 +2159,7 @@ function enqueueEpisodes({ seriesId, seriesTitle, episodes, cover }) {
   for (const ep of episodes) {
     const epIndexStr = String(ep.vid_index).padStart(3, '0');
     const namePart = renderName(settings.name_format, cleanSeriesTitle, ep.vid_index, ep.title);
-    const baseName = namePart || `${cleanSeriesTitle}_第${epIndexStr}集`;
+    const baseName = namePart || `${cleanSeriesTitle}_Tập ${epIndexStr}`;
     const filename = `${baseName}.mp4`;
     const finalPath = path.join(downloadDir, filename);
 
@@ -2139,7 +2185,7 @@ function enqueueEpisodes({ seriesId, seriesTitle, episodes, cover }) {
       batchInfo,
       savePath: finalPath,
       customDir: downloadDir,
-      title: `《${cleanSeriesTitle}》第${epIndexStr}集${ep.title ? ' ' + ep.title : ''}`,
+      title: `《${cleanSeriesTitle}》 Tập ${epIndexStr}${ep.title ? ' ' + ep.title : ''}`,
       filename,
       platform: 'hongguo',
       type: 'hongguo',
@@ -2150,7 +2196,7 @@ function enqueueEpisodes({ seriesId, seriesTitle, episodes, cover }) {
       startTime: Date.now(),
       videoInfo: {
         author: cleanSeriesTitle,
-        title: `《${cleanSeriesTitle}》第${epIndexStr}集`,
+        title: `《${cleanSeriesTitle}》 Tập ${epIndexStr}`,
         cover: ep.cover || firstCover,
         aweme_id: ep.vid,
       },
@@ -2178,23 +2224,55 @@ ipcMain.handle('hongguo-download-batch', async (event, payload) => {
   try {
     const { seriesId, seriesTitle, episodes } = payload || {};
     if (!Array.isArray(episodes) || episodes.length === 0) {
-      return { success: false, error: '未选择集数' };
+      return { success: false, error: 'Chưa chọn tập nào' };
     }
     const count = enqueueEpisodes({ seriesId, seriesTitle, episodes });
     return { success: true, count, requested: episodes.length };
   } catch (error) {
-    console.error('[Hongguo] 提交批量下载失败:', error.message);
+    console.error('[Hongguo] Gửi yêu cầu tải xuống hàng loạt thất bại:', error.message);
     return { success: false, error: error.message };
   }
+});
+
+// 一键下载多部剧的全部分集（浏览页「下载本页全部」/ 搜索结果「全部下载」）
+ipcMain.handle('download-series-list', async (event, seriesIds) => {
+  const ids = Array.isArray(seriesIds) ? seriesIds.map(String).filter(Boolean) : [];
+  if (!ids.length) return { success: false, error: 'Không có phim nào để tải' };
+  let seriesCount = 0;
+  let episodeCount = 0;
+  const failed = [];
+  // 4 路并发拉分集列表（入队仍按顺序逐部进行，enqueueEpisodes 是同步的）
+  let next = 0;
+  const worker = async () => {
+    while (next < ids.length) {
+      const sid = ids[next++];
+      try {
+        const data = await hongguo.fetchEpisodeList(sid);
+        upsertSeriesRegistry(data);
+        episodeCount += enqueueEpisodes({
+          seriesId: data.series_id,
+          seriesTitle: data.series_title,
+          episodes: data.episodes,
+          cover: data.cover,
+        });
+        seriesCount++;
+      } catch (error) {
+        console.error('[BulkDownload] Lấy danh sách tập thất bại:', sid, error.message);
+        failed.push(sid);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, ids.length) }, worker));
+  return { success: true, seriesCount, episodeCount, failed };
 });
 
 // 播放器里「下载本集」：按 series_id + vid_index 补单集
 ipcMain.handle('download-single-episode', async (event, seriesId, vidIndex) => {
   try {
     const entry = seriesRegistry.find((s) => String(s.series_id) === String(seriesId));
-    if (!entry) return { success: false, error: '未找到该剧档案，请先解析一次' };
+    if (!entry) return { success: false, error: 'Không tìm thấy hồ sơ phim này, vui lòng phân tích một lần trước' };
     const ep = entry.episodes.find((e) => Number(e.vid_index) === Number(vidIndex));
-    if (!ep) return { success: false, error: '未找到该集' };
+    if (!ep) return { success: false, error: 'Không tìm thấy tập này' };
     const count = enqueueEpisodes({
       seriesId: entry.series_id,
       seriesTitle: entry.series_title,
@@ -2203,7 +2281,7 @@ ipcMain.handle('download-single-episode', async (event, seriesId, vidIndex) => {
     });
     return { success: true, count };
   } catch (error) {
-    console.error('[Player] 下载单集失败:', error.message);
+    console.error('[Player] Tải xuống tập thất bại:', error.message);
     return { success: false, error: error.message };
   }
 });
@@ -2246,7 +2324,7 @@ ipcMain.handle('test-proxy', async (event, draft) => {
   const settings = { ...getCurrentSettings(), ...(draft || {}) };
   const resolved = resolveProxyConfig(settings);
   if (resolved.mode === 'custom' && !resolved.url) {
-    return { success: false, error: '请填写完整的代理地址与端口' };
+    return { success: false, error: 'Vui lòng điền đầy đủ địa chỉ và cổng proxy' };
   }
 
   // 按当前配置构造 axios 选项：custom 显式指定，system 交给环境变量，direct 关闭
@@ -2276,20 +2354,20 @@ ipcMain.handle('test-proxy', async (event, draft) => {
         success: true,
         elapsed: ms,
         mode: resolved.mode,
-        via: resolved.url || '(系统/环境变量代理)',
-        message: `连通正常（HTTP ${res.status}，耗时 ${ms}ms）`,
+        via: resolved.url || '(proxy hệ thống/biến môi trường)',
+        message: `Kết nối bình thường (HTTP ${res.status}, mất ${ms}ms)`,
       };
     }
-    return { success: false, error: `请求返回 HTTP ${res.status}（耗时 ${ms}ms）` };
+    return { success: false, error: `Yêu cầu trả về HTTP ${res.status} (mất ${ms}ms)` };
   } catch (error) {
     const ms = Date.now() - started;
     const code = (error && error.code) || '';
-    let hint = error.message || '未知错误';
-    if (code === 'ECONNREFUSED') hint = '代理端口拒绝连接，请确认代理软件已启动、端口填写正确';
-    else if (code === 'ETIMEDOUT' || code === 'ECONNABORTED') hint = '连接超时，请检查代理地址/端口或代理是否可用';
-    else if (code === 'ENOTFOUND') hint = '无法解析代理地址，请检查主机名';
-    else if (/407/.test(hint)) hint = '代理需要认证，请填写用户名与密码';
-    return { success: false, error: `${hint}（耗时 ${ms}ms）`, code };
+    let hint = error.message || 'Lỗi không xác định';
+    if (code === 'ECONNREFUSED') hint = 'Cổng proxy từ chối kết nối, vui lòng kiểm tra phần mềm proxy đã chạy và cổng đã điền đúng';
+    else if (code === 'ETIMEDOUT' || code === 'ECONNABORTED') hint = 'Hết thời gian kết nối, vui lòng kiểm tra địa chỉ/cổng proxy hoặc proxy có hoạt động không';
+    else if (code === 'ENOTFOUND') hint = 'Không thể phân giải địa chỉ proxy, vui lòng kiểm tra tên máy chủ';
+    else if (/407/.test(hint)) hint = 'Proxy yêu cầu xác thực, vui lòng điền tên người dùng và mật khẩu';
+    return { success: false, error: `${hint} (mất ${ms}ms)`, code };
   }
 });
 
@@ -2332,7 +2410,7 @@ function removeTaskFile(task) {
         freed += st.size;
       }
     } catch (e) {
-      console.warn('[Clean] 删除失败:', p, e.message);
+      console.warn('[Clean] Xóa thất bại:', p, e.message);
     }
   }
   return freed;
@@ -2364,13 +2442,13 @@ function seriesFilePaths(seriesId) {
 ipcMain.handle('delete-task', async (event, taskId, options) => {
   const deleteFiles = !!(options && options.deleteFiles);
   const taskIndex = downloadTasks.findIndex((t) => t.id === taskId);
-  if (taskIndex === -1) return { success: false, error: '任务不存在' };
+  if (taskIndex === -1) return { success: false, error: 'Tác vụ không tồn tại' };
 
   const task = downloadTasks[taskIndex];
   if (task.status === 'downloading') {
     task.cancelled = true;
     if (task.cancelSource) {
-      try { task.cancelSource.cancel('用户删除任务'); } catch (_) {}
+      try { task.cancelSource.cancel('Người dùng xóa tác vụ'); } catch (_) {}
     }
     if (task.writer) {
       try { task.writer.end(); } catch (_) {}
@@ -2390,7 +2468,7 @@ ipcMain.handle('delete-task', async (event, taskId, options) => {
 });
 
 ipcMain.handle('delete-tasks', async (event, taskIds, options) => {
-  if (!Array.isArray(taskIds) || taskIds.length === 0) return { success: false, error: '没有要删除的任务' };
+  if (!Array.isArray(taskIds) || taskIds.length === 0) return { success: false, error: 'Không có tác vụ nào cần xóa' };
   const deleteFiles = !!(options && options.deleteFiles);
   let freed = 0;
   for (const id of taskIds) {
@@ -2408,7 +2486,7 @@ async function deleteOneTask(taskId) {
   const task = downloadTasks[taskIndex];
   if (task.status === 'downloading') {
     task.cancelled = true;
-    if (task.cancelSource) { try { task.cancelSource.cancel('用户删除任务'); } catch (_) {} }
+    if (task.cancelSource) { try { task.cancelSource.cancel('Người dùng xóa tác vụ'); } catch (_) {} }
     if (task.writer) { try { task.writer.end(); } catch (_) {} }
   }
   downloadTasks.splice(taskIndex, 1);
@@ -2441,7 +2519,7 @@ ipcMain.handle('delete-series-files', async (event, seriesId, options) => {
         }
       } catch (e) {
         failed++;
-        console.warn('[Clean] 删除失败:', p, e.message);
+        console.warn('[Clean] Xóa thất bại:', p, e.message);
       }
       // 顺带清掉可能残留的临时文件
       try {
@@ -2462,7 +2540,7 @@ ipcMain.handle('delete-series-files', async (event, seriesId, options) => {
       let names = [];
       try { names = fs.readdirSync(dir); } catch (_) {}
       for (const f of names) {
-        const isMerged = includeMerged && f.endsWith('.mp4') && f.includes('合集');
+        const isMerged = includeMerged && f.endsWith('.mp4') && isMergedName(f);
         const isList = f.endsWith('.ffconcat.txt');
         if (!isMerged && !isList) continue;
         try {
@@ -2488,10 +2566,10 @@ ipcMain.handle('delete-series-files', async (event, seriesId, options) => {
       if (String(e.seriesId) === sid) onlineCache.delete(vid);
     }
 
-    console.log(`[Clean] 删除《${title}》本地文件 ${count} 个，释放 ${(freed / 1048576).toFixed(1)}MB`);
+    console.log(`[Clean] Đã xóa ${count} tệp cục bộ của 《${title}》, giải phóng ${(freed / 1048576).toFixed(1)}MB`);
     return { success: true, count, freed, failed };
   } catch (error) {
-    console.error('[Clean] 删除剧集文件失败:', error.message);
+    console.error('[Clean] Xóa tệp phim thất bại:', error.message);
     return { success: false, error: error.message };
   }
 });
@@ -2502,7 +2580,7 @@ ipcMain.handle('delete-episode-file', async (event, seriesId, vidIndex) => {
     const sid = String(seriesId);
     const idx = Number(vidIndex);
     const paths = seriesFilePaths(sid).filter((p) => {
-      const m = p.match(/(\d{1,4})\.mp4$/i);
+      const m = p.match(EP_FILE_RE);
       return m && parseInt(m[1], 10) === idx;
     });
     let freed = 0;
@@ -2545,7 +2623,7 @@ ipcMain.handle('get-storage-usage', async () => {
         const c = collectSeriesEpisodeFiles(s.series_id, s.series_title);
         if (c.dir && fs.existsSync(c.dir)) {
           for (const f of fs.readdirSync(c.dir)) {
-            if (f.endsWith('.mp4') && f.includes('合集')) {
+            if (f.endsWith('.mp4') && isMergedName(f)) {
               mergedBytes += fs.statSync(path.join(c.dir, f)).size;
               merged++;
             }
@@ -2589,7 +2667,7 @@ ipcMain.handle('delete-all-downloaded', async () => {
         const c = collectSeriesEpisodeFiles(sid, '');
         if (c.dir && fs.existsSync(c.dir)) {
           for (const f of fs.readdirSync(c.dir)) {
-            if (f.endsWith('.mp4') && f.includes('合集')) {
+            if (f.endsWith('.mp4') && isMergedName(f)) {
               const p = path.join(c.dir, f);
               freed += fs.statSync(p).size; fs.unlinkSync(p); count++;
             }
@@ -2609,10 +2687,10 @@ ipcMain.handle('delete-all-downloaded', async () => {
 
 ipcMain.handle('stop-download', async (event, taskId) => {
   const task = downloadTasks.find((t) => t.id === taskId);
-  if (!task) return { success: false, error: '任务不存在' };
+  if (!task) return { success: false, error: 'Tác vụ không tồn tại' };
 
   task.cancelled = true;
-  if (task.cancelSource) { try { task.cancelSource.cancel('用户停止下载'); } catch (_) {} }
+  if (task.cancelSource) { try { task.cancelSource.cancel('Người dùng dừng tải xuống'); } catch (_) {} }
   if (task.writer) { try { task.writer.end(); } catch (_) {} }
 
   task.status = 'stopped';
@@ -2628,7 +2706,7 @@ ipcMain.handle('stop-download', async (event, taskId) => {
 
 ipcMain.handle('retry-task', async (event, taskId) => {
   const task = downloadTasks.find((t) => t.id === taskId);
-  if (!task) return { success: false, error: '任务不存在' };
+  if (!task) return { success: false, error: 'Tác vụ không tồn tại' };
 
   if (task.savePath && fs.existsSync(task.savePath)) {
     try { fs.unlinkSync(task.savePath); } catch (_) {}
@@ -2650,7 +2728,7 @@ ipcMain.handle('retry-task', async (event, taskId) => {
 });
 
 ipcMain.handle('retry-tasks', async (event, taskIds) => {
-  if (!Array.isArray(taskIds) || taskIds.length === 0) return { success: false, error: '没有要重试的任务' };
+  if (!Array.isArray(taskIds) || taskIds.length === 0) return { success: false, error: 'Không có tác vụ nào cần thử lại' };
   let count = 0;
   for (const taskId of taskIds) {
     const task = downloadTasks.find((t) => t.id === taskId);
@@ -2691,7 +2769,7 @@ ipcMain.handle('get-queue-status', async () => ({
 
 ipcMain.handle('open-folder', async (event, taskId) => {
   const task = downloadTasks.find((t) => t.id === taskId);
-  if (!task) return { success: false, error: '任务不存在' };
+  if (!task) return { success: false, error: 'Tác vụ không tồn tại' };
 
   if (task.customDir && fs.existsSync(task.customDir)) {
     await shell.openPath(task.customDir);
@@ -2713,24 +2791,24 @@ ipcMain.handle('open-folder', async (event, taskId) => {
       return { success: true };
     }
   }
-  return { success: false, error: '文件夹不存在' };
+  return { success: false, error: 'Thư mục không tồn tại' };
 });
 
 // ===== 应用信息 =====
 ipcMain.handle('get-app-info', async () => ({
   version: APP_VERSION,
   brand: APP_TITLE,
-  appName: '红果短剧下载器',
+  appName: 'Trình tải phim ngắn Hongguo',
 }));
 
 // 打开外部链接（保留给需要时调用）
 ipcMain.handle('open-external-url', async (event, url) => {
-  if (!url) return { success: false, error: '缺少链接' };
+  if (!url) return { success: false, error: 'Thiếu liên kết' };
   try {
     await shell.openExternal(url);
     return { success: true };
   } catch (err) {
-    console.error('[Shell] 打开链接失败:', err.message);
+    console.error('[Shell] Mở liên kết thất bại:', err.message);
     return { success: false, error: err.message };
   }
 });
@@ -2776,7 +2854,7 @@ app.whenReady().then(async () => {
   loadSeriesRegistry();
   rebuildSeriesRegistryFromTasks();
   // 任务记录可能缺失（被清空/跨会话），从磁盘补回，保证下载列表与文件一致
-  try { rescanDownloadsFromDisk(); } catch (e) { console.warn('[Rescan] 启动补登记失败:', e.message); }
+  try { rescanDownloadsFromDisk(); } catch (e) { console.warn('[Rescan] Khôi phục bản ghi khi khởi động thất bại:', e.message); }
   loadMergeTasks();
   registerStreamProtocol();
   registerLocalProtocol();
@@ -2788,7 +2866,7 @@ app.whenReady().then(async () => {
   // 启动后自动接着跑「等待中」的任务（上次未下完的队列），无需手动点启动
   const resumed = enqueuePendingTasks();
   if (resumed > 0) {
-    console.log(`[Queue] 启动自动续跑 ${resumed} 个等待中任务，并发 ${MAX_CONCURRENT_DOWNLOADS}`);
+    console.log(`[Queue] Tự động tiếp tục ${resumed} tác vụ đang chờ khi khởi động, số luồng đồng thời ${MAX_CONCURRENT_DOWNLOADS}`);
     pumpQueue();
   }
 
