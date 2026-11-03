@@ -145,7 +145,7 @@ const FORMATS = [
  * Tải một tập thẳng ra outPath (yt-dlp tự gộp hình + tiếng bằng ffmpeg).
  * onProgress(received, total); onSpawn(child) để bên gọi có thể dừng tiến trình.
  */
-async function downloadTo(vid, outPath, { onProgress, onSpawn } = {}) {
+async function downloadTo(vid, outPath, { onProgress, onSpawn, proxy } = {}) {
   const args = [
     '--merge-output-format', 'mp4',
     '--force-overwrites', '--newline',
@@ -155,6 +155,7 @@ async function downloadTo(vid, outPath, { onProgress, onSpawn } = {}) {
     '-o', outPath,
   ];
   if (options.ffmpeg) args.push('--ffmpeg-location', options.ffmpeg);
+  if (proxy) args.push('--proxy', proxy); // Proxy xoay vòng của tập này; không có thì yt-dlp đọc biến môi trường như cũ
   args.push(episodeUrl(vid));
   for (const [i, fmt] of FORMATS.entries()) {
     // Luồng hình và luồng tiếng tải lần lượt, mỗi luồng đếm lại từ 0: cộng dồn để tiến độ không bị nhảy lùi

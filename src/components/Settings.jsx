@@ -12,6 +12,7 @@ const FORMAT_PRESETS = [
 const PROXY_MODES = [
   { value: 'system', label: 'Theo hệ thống', desc: 'Dùng cấu hình proxy có sẵn trong hệ thống / biến môi trường' },
   { value: 'custom', label: 'Tùy chỉnh', desc: 'Tự nhập địa chỉ và cổng proxy (hỗ trợ proxy HTTP/HTTPS)' },
+  { value: 'rotate', label: 'Xoay vòng danh sách proxy', desc: 'Mỗi tập tải qua proxy kế tiếp trong danh sách, lỗi thì đổi proxy khác để thử lại' },
   { value: 'direct', label: 'Bắt buộc kết nối trực tiếp', desc: 'Bỏ qua mọi proxy, kết nối trực tiếp' },
 ];
 
@@ -37,6 +38,10 @@ function describeProxy(settings) {
     const port = (settings.proxy_port || '').toString().trim();
     if (!host) return { on: false, text: 'Đã bật nhưng chưa nhập địa chỉ proxy' };
     return { on: true, text: `${host}${port ? ':' + port : ''}` };
+  }
+  if (mode === 'rotate') {
+    const n = String(settings.proxy_list || '').split('\n').filter((l) => l.trim()).length;
+    return n ? { on: true, text: `Xoay vòng ${n} proxy khi tải video` } : { on: false, text: 'Đã bật nhưng danh sách proxy trống' };
   }
   return { on: true, text: 'Theo proxy của hệ thống / biến môi trường' };
 }
@@ -80,6 +85,7 @@ function SettingsPage() {
       proxy_port: settings.proxy_port || 7890,
       proxy_username: settings.proxy_username || '',
       proxy_password: settings.proxy_password || '',
+      proxy_list: settings.proxy_list || '',
     });
     setTestResult(null);
     setProxyOpen(true);
@@ -367,6 +373,24 @@ function SettingsPage() {
                       />
                     </div>
                     <p className="settings-hint">Để trống nếu proxy không cần xác thực</p>
+                  </div>
+                )}
+                {mode === 'rotate' && (
+                  <div className="settings-group">
+                    <label className="settings-label">Danh sách proxy (mỗi dòng một proxy)</label>
+                    <textarea
+                      className="input-field proxy-list"
+                      rows={6}
+                      spellCheck={false}
+                      placeholder={'http://user:pass@103.15.22.1:8080\n103.15.22.2:8080\n103.15.22.3:8080:user:pass'}
+                      value={proxyDraft.proxy_list}
+                      disabled={!proxyDraft.proxy_enabled}
+                      onChange={(e) => patchDraft('proxy_list', e.target.value)}
+                    />
+                    <p className="settings-hint">
+                      Hỗ trợ proxy HTTP/HTTPS, dạng <code>host:port</code>, <code>host:port:user:pass</code> hoặc <code>http://user:pass@host:port</code>.
+                      Dùng Rotating Gateway thì chỉ cần nhập một dòng. Chỉ việc tải video đi qua danh sách này; phân tích phim và tìm kiếm vẫn kết nối trực tiếp.
+                    </p>
                   </div>
                 )}
               </div>

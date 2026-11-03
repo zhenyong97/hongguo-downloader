@@ -344,3 +344,13 @@
   display: flex;
   gap: 10px;
 }
+
+.input-field.proxy-list {
+  width: 100%;
+  height: auto;
+  padding: 10px 14px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+}

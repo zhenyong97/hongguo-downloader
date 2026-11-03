@@ -13,6 +13,7 @@ const path = require('path');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const axios = require('axios');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 
 const hongguo = require('./src/native/hongguo');
 const reelfren = require('./src/native/reelfren');
@@ -26,7 +27,7 @@ async function downloadViaYtdlp(vid, finalPath, { onProgress, onSpawn } = {}) {
   ytdlp.options.ffmpeg = ffmpeg && ffmpeg !== 'ffmpeg' ? ffmpeg : null; // 'ffmpeg' nghĩa là để yt-dlp tự tìm trong PATH
   ytdlp.options.cookiesBrowser = String(getCurrentSettings().ytdlp_cookies_browser || '').trim();
   const tmpPath = finalPath.replace(/\.mp4$/i, '') + '.ytdl.mp4';
-  await ytdlp.downloadTo(vid, tmpPath, { onProgress, onSpawn });
+  await ytdlp.downloadTo(vid, tmpPath, { onProgress, onSpawn, proxy: nextRotatingProxy() });
   fs.renameSync(tmpPath, finalPath);
 }
 const store = require('./src/store');
@@ -154,14 +155,61 @@ function getDefaultSettings() {
     ytdlp_cookies_browser: '',
     // ===== Proxy mạng =====
     // proxy_enabled: có bật proxy không (khi tắt thì bỏ qua proxy hệ thống, kết nối trực tiếp)
-    // proxy_mode:    system=theo hệ thống/biến môi trường · custom=chỉ định thủ công · direct=bắt buộc kết nối trực tiếp
+    // proxy_mode:    system=theo hệ thống/biến môi trường · custom=chỉ định thủ công · rotate=xoay vòng danh sách khi tải video · direct=bắt buộc kết nối trực tiếp
     proxy_enabled: false,
     proxy_mode: 'system',
     proxy_host: '127.0.0.1',
     proxy_port: 7890,
     proxy_username: '',
     proxy_password: '',
+    proxy_list: '', // proxy_mode='rotate': mỗi dòng một proxy, chỉ dùng cho việc tải video
   };
+}
+
+/**
+ * Một dòng trong danh sách proxy xoay vòng -> URL proxy.
+ * Nhận http(s)://user:pass@host:port, host:port, host:port:user:pass; dòng sai định dạng trả về null.
+ */
+function parseProxyLine(line) {
+  const s = String(line || '').trim();
+  if (!s || s.startsWith('#')) return null;
+  if (/^https?:\/\//i.test(s)) {
+    try {
+      const u = new URL(s);
+      return u.hostname && u.port ? s.replace(/\/+$/, '') : null;
+    } catch (_) {
+      return null;
+    }
+  }
+  const [host, port, user, pass] = s.split(':');
+  if (!host || !/^\d+$/.test(port || '')) return null;
+  const auth = user ? `${encodeURIComponent(user)}:${encodeURIComponent(pass || '')}@` : '';
+  return `http://${auth}${host}:${port}`;
+}
+
+function rotatingProxies(settings) {
+  const s = settings || getCurrentSettings();
+  if (s.proxy_enabled !== true || s.proxy_mode !== 'rotate') return [];
+  return String(s.proxy_list || '').split(/\r?\n/).map(parseProxyLine).filter(Boolean);
+}
+
+// Lần lượt từng proxy theo vòng; đọc lại cài đặt mỗi lần nên sửa danh sách có hiệu lực ngay
+let proxyCursor = 0;
+function nextRotatingProxy() {
+  const list = rotatingProxies();
+  return list.length ? list[proxyCursor++ % list.length] : null;
+}
+
+/**
+ * Cấu hình axios để một request đi qua proxyUrl. Đích HTTPS dùng đường hầm CONNECT (https-proxy-agent) —
+ * proxy trả phí thường chỉ hỗ trợ cách này; đích HTTP dùng proxy sẵn có của axios.
+ */
+function axiosProxyConfig(proxyUrl, targetUrl) {
+  if (/^https:/i.test(targetUrl)) return { proxy: false, httpsAgent: new HttpsProxyAgent(proxyUrl) };
+  const u = new URL(proxyUrl);
+  const proxy = { protocol: u.protocol.replace(':', ''), host: u.hostname, port: Number(u.port) };
+  if (u.username) proxy.auth = { username: decodeURIComponent(u.username), password: decodeURIComponent(u.password) };
+  return { proxy };
 }
 
 /**
@@ -185,6 +233,10 @@ function resolveProxyConfig(settings) {
   const mode = s.proxy_mode || 'system';
   if (mode === 'direct') {
     return { mode: 'direct', url: null };
+  }
+  // rotate: phân tích/tìm kiếm kết nối trực tiếp, chỉ việc tải video lấy proxy từ danh sách (nextRotatingProxy)
+  if (mode === 'rotate') {
+    return { mode: 'rotate', url: null };
   }
   if (mode === 'custom') {
     let host = String(s.proxy_host || '').trim();
@@ -245,7 +297,7 @@ async function applyProxyToSession(resolved) {
   try {
     const ses = session.defaultSession;
     if (!ses) return;
-    if (resolved.mode === 'direct') {
+    if (resolved.mode === 'direct' || resolved.mode === 'rotate') {
       await ses.setProxy({ mode: 'direct' });
     } else if (resolved.mode === 'custom' && resolved.url) {
       await ses.setProxy({ mode: 'fixed_servers', proxyRules: resolved.url });
@@ -665,6 +717,7 @@ async function executeHongguoDownload(task) {
     //    thử lại tối đa DOWNLOAD_TRIES lần, tải tiếp từ chỗ dừng bằng Range nếu máy chủ hỗ trợ
     let headers = { "User-Agent": hongguo.UA };
     let received = 0;
+    let proxy = nextRotatingProxy(); // Chế độ xoay vòng: mỗi tập một proxy, lỗi thì đổi proxy kế tiếp
     for (let attempt = 1; ; attempt++) {
       let writer = null;
       try {
@@ -674,6 +727,7 @@ async function executeHongguoDownload(task) {
           method: 'GET', url: playInfo.url, responseType: 'stream',
           headers: received ? { ...headers, Range: `bytes=${received}-` } : headers,
           timeout: 60000, cancelToken: source.token,
+          ...(proxy ? axiosProxyConfig(proxy, playInfo.url) : {}),
         });
         let response;
         try {
@@ -708,9 +762,11 @@ async function executeHongguoDownload(task) {
         if (writer) await new Promise((r) => writer.end(r));
         if (task.cancelled) break;
         const status = err.response && err.response.status;
-        if (attempt >= DOWNLOAD_TRIES || (status >= 400 && status < 500)) throw err;
+        // Lỗi 4xx thường không tự hết; riêng khi xoay vòng thì có thể do proxy (407) hoặc IP bị chặn (403): vẫn thử proxy kế tiếp
+        if (attempt >= DOWNLOAD_TRIES || (status >= 400 && status < 500 && !proxy)) throw err;
         received = fs.existsSync(tmpPath) ? fs.statSync(tmpPath).size : 0; // Lấy theo tệp thật, phòng phần đệm chưa kịp ghi
-        console.warn(`[Hongguo] Lần ${attempt} lỗi (${err.message}), thử lại từ byte ${received}`);
+        proxy = nextRotatingProxy() || proxy;
+        console.warn(`[Hongguo] Lần ${attempt} lỗi (${err.message}), thử lại từ byte ${received}${proxy ? ' qua ' + proxy.replace(/\/\/[^@]*@/, '//') : ''}`);
         await new Promise((r) => setTimeout(r, 2000 * attempt));
       }
     }
@@ -2617,6 +2673,22 @@ ipcMain.handle('test-proxy', async (event, draft) => {
   const resolved = resolveProxyConfig(settings);
   if (resolved.mode === 'custom' && !resolved.url) {
     return { success: false, error: 'Vui lòng điền đầy đủ địa chỉ và cổng proxy' };
+  }
+
+  // Xoay vòng: thử song song từng proxy, báo số proxy dùng được và liệt kê proxy hỏng
+  if (resolved.mode === 'rotate') {
+    const list = rotatingProxies(settings);
+    if (!list.length) return { success: false, error: 'Danh sách proxy trống hoặc sai định dạng' };
+    const hide = (u) => u.replace(/\/\/[^@]*@/, '//');
+    const checks = await Promise.all(list.map((u) =>
+      axios.get('https://www.baidu.com', { timeout: 12000, ...axiosProxyConfig(u, 'https://www.baidu.com'), headers: { 'User-Agent': 'Mozilla/5.0' }, validateStatus: () => true })
+        .then((r) => (r.status >= 200 && r.status < 400 ? null : `${hide(u)} (HTTP ${r.status})`))
+        .catch((e) => `${hide(u)} (${e.code || e.message})`)));
+    const bad = checks.filter(Boolean);
+    const okCount = list.length - bad.length;
+    const summary = `${okCount}/${list.length} proxy dùng được`;
+    if (!okCount) return { success: false, error: `${summary}: ${bad.join(', ')}` };
+    return { success: true, mode: 'rotate', message: bad.length ? `${summary}; lỗi: ${bad.join(', ')}` : summary };
   }
 
   // Tạo tùy chọn axios theo cấu hình hiện tại: custom thì chỉ định rõ, system thì để biến môi trường lo, direct thì tắt
