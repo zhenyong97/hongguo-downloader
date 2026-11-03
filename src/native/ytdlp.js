@@ -141,6 +141,7 @@ async function downloadTo(vid, outPath, { onProgress, onSpawn } = {}) {
     '-f', 'bv*[vcodec^=avc1]+ba/bv*+ba/b', // Ưu tiên H.264 để máy không có bộ giải mã HEVC/AV1 vẫn phát được
     '--merge-output-format', 'mp4',
     '--force-overwrites', '--newline',
+    '--no-playlist', // Phần 1 của video nhiều phần dùng link không có ?p=, thiếu cờ này yt-dlp sẽ tải cả tuyển tập vào một tệp
     '--progress-template', 'download:PROG %(progress.downloaded_bytes)s %(progress.total_bytes,progress.total_bytes_estimate)s',
     '-o', outPath,
   ];
