@@ -96,8 +96,9 @@ function run(args, { onLine, onSpawn } = {}) {
     child.on('error', (e) => reject(new Error(e.code === 'ENOENT' ? 'Không tìm thấy yt-dlp, hãy chạy node scripts/setup-ytdlp.js' : e.message)));
     child.on('close', (code, signal) => {
       if (code === 0) return resolve(out);
-      if (signal) return reject(new Error('yt-dlp đã bị dừng'));
+      if (signal) return reject(Object.assign(new Error('yt-dlp đã bị dừng'), { stopped: true }));
       let msg = (err.match(/ERROR: (.*)/) || [])[1] || err.trim().split('\n').pop() || 'mã thoát ' + code;
+      msg = msg.split('\r').pop().replace(/^\[download\]\s*/, ''); // Bỏ phần dòng tiến độ bị \r ghi đè lẫn vào
       msg = msg.replace(/;?\s*please report this issue.*$/i, '');
       if (/cookies/i.test(msg)) {
         msg += options.cookiesBrowser
@@ -134,13 +135,18 @@ function episodeUrl(vid) {
   return site === 'bili' && part > 1 ? `${url}?p=${part}` : url;
 }
 
+// Thử lần lượt: một số tệp 1080p trên CDN Bilibili bị cắt cụt (máy chủ luôn ngắt ở cùng một byte), khi đó hạ xuống ≤720p
+const FORMATS = [
+  'bv*[vcodec^=avc1]+ba/bv*+ba/b', // Ưu tiên H.264 để máy không có bộ giải mã HEVC/AV1 vẫn phát được
+  'bv*[vcodec^=avc1][height<=720]+ba/bv*[height<=720]+ba/b[height<=720]/b',
+];
+
 /**
  * Tải một tập thẳng ra outPath (yt-dlp tự gộp hình + tiếng bằng ffmpeg).
  * onProgress(received, total); onSpawn(child) để bên gọi có thể dừng tiến trình.
  */
 async function downloadTo(vid, outPath, { onProgress, onSpawn } = {}) {
   const args = [
-    '-f', 'bv*[vcodec^=avc1]+ba/bv*+ba/b', // Ưu tiên H.264 để máy không có bộ giải mã HEVC/AV1 vẫn phát được
     '--merge-output-format', 'mp4',
     '--force-overwrites', '--newline',
     '--retry-sleep', 'http:exp=1:30', // CDN bóp tốc độ/ngắt kết nối khi tải nhiều: giãn dần giữa các lần thử thay vì thử dồn 10 lần rồi bỏ cuộc
@@ -150,28 +156,36 @@ async function downloadTo(vid, outPath, { onProgress, onSpawn } = {}) {
   ];
   if (options.ffmpeg) args.push('--ffmpeg-location', options.ffmpeg);
   args.push(episodeUrl(vid));
-  // Luồng hình và luồng tiếng tải lần lượt, mỗi luồng đếm lại từ 0: cộng dồn để tiến độ không bị nhảy lùi
-  let base = 0;
-  let last = { got: 0, total: 0 };
-  await run(args, {
-    onSpawn,
-    onLine: (line) => {
-      const m = line.match(/^PROG (\d+) (\d+(?:\.\d+)?|NA)/);
-      if (!m || !onProgress) return;
-      const cur = { got: Number(m[1]), total: m[2] === 'NA' ? 0 : Math.round(Number(m[2])) };
-      if (cur.got < last.got) base += last.total || last.got;
-      last = cur;
-      onProgress(base + cur.got, cur.total ? base + cur.total : 0);
-    },
-  });
-  if (fs.existsSync(outPath)) return;
-  // Không có ffmpeg thì yt-dlp vẫn thoát 0 nhưng để lại hai luồng rời <tên>.f<mã>.mp4/.m4a: dọn đi và báo rõ
+  for (const [i, fmt] of FORMATS.entries()) {
+    // Luồng hình và luồng tiếng tải lần lượt, mỗi luồng đếm lại từ 0: cộng dồn để tiến độ không bị nhảy lùi
+    let base = 0;
+    let last = { got: 0, total: 0 };
+    try {
+      await run(['-f', fmt, ...args], {
+        onSpawn,
+        onLine: (line) => {
+          const m = line.match(/^PROG (\d+) (\d+(?:\.\d+)?|NA)/);
+          if (!m || !onProgress) return;
+          const cur = { got: Number(m[1]), total: m[2] === 'NA' ? 0 : Math.round(Number(m[2])) };
+          if (cur.got < last.got) base += last.total || last.got;
+          last = cur;
+          onProgress(base + cur.got, cur.total ? base + cur.total : 0);
+        },
+      });
+      break;
+    } catch (e) {
+      if (e.stopped || i === FORMATS.length - 1) throw e;
+      console.warn(`[yt-dlp] ${vid}: ${e.message}, thử lại với chất lượng thấp hơn`);
+    }
+  }
+  // Dọn luồng rời <tên>.f<mã>.* còn sót: bản 1080p hỏng sau khi đã hạ chất lượng,
+  // hoặc cả hai luồng khi không có ffmpeg (yt-dlp vẫn thoát 0 nhưng không gộp)
   const dir = path.dirname(outPath);
   const stem = path.basename(outPath).replace(/\.mp4$/i, '') + '.f';
   for (const f of fs.readdirSync(dir)) {
     if (f.startsWith(stem)) try { fs.unlinkSync(path.join(dir, f)); } catch (_) {}
   }
-  throw new Error('yt-dlp không gộp được hình và tiếng: thiếu ffmpeg');
+  if (!fs.existsSync(outPath)) throw new Error('yt-dlp không gộp được hình và tiếng: thiếu ffmpeg');
 }
 
 module.exports = { owns, seriesIdFromUrl, fetchEpisodeList, downloadTo, options };
