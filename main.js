@@ -1105,11 +1105,13 @@ ipcMain.handle('dismissed-count', async () => seriesRegistry.filter((s) => s.dis
 let mergeTasks = []; // { id, seriesId, seriesTitle, status, progress, output, total, done, error }
 
 function resolveFfmpeg(name) {
+  // build/ffmpeg 里放的是 Windows 版 exe；在 macOS/Linux 上开发或交叉打包时不能拿它来执行
+  const bin = process.platform === 'win32' ? `${name}.exe` : name;
   const candidates = [
     // 打包后：resources/bin（extraResources 不解压进 asar，exe 才能执行）
-    process.resourcesPath ? path.join(process.resourcesPath, 'bin', `${name}.exe`) : null,
+    process.resourcesPath ? path.join(process.resourcesPath, 'bin', bin) : null,
     // 开发态：仓库内 build/ffmpeg
-    path.join(__dirname, 'build', 'ffmpeg', `${name}.exe`),
+    path.join(__dirname, 'build', 'ffmpeg', bin),
     // 系统 PATH
     name,
   ];
